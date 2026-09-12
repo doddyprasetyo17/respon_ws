@@ -2,8 +2,12 @@
 # Salin config.example.php -> config.php di tiap server.
 /curl/config.php
 
-# Riwayat pengecekan, khusus per deployment
-/curl/data/
+# Riwayat pengecekan, khusus per deployment. Isinya tidak ikut ter-commit,
+# tapi foldernya iya (.gitkeep): folder yang tidak ada memaksa PHP membuatnya
+# sendiri di tiap deployment baru, dan di server yang hak tulisnya dibatasi
+# itu gagal -- riwayat hilang hanya karena satu folder kosong tidak terkirim.
+/curl/data/*
+!/curl/data/.gitkeep
 
 # Catatan kerja Claude Code
 CLAUDE.md

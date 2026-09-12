@@ -53,11 +53,14 @@ try {
     if (!empty($config['history_enabled'])) {
         $dataDir = __DIR__ . DIRECTORY_SEPARATOR . 'data';
 
-        if (history_ensure_dir($dataDir)) {
+        $masalah = history_prepare_dir($dataDir);
+
+        if ($masalah === null) {
             $samples = history_append(history_file($dataDir), $services, $config);
             $stats   = history_stats($samples, $services, $stripLength);
         } else {
-            $historyNote = 'Folder curl/data tidak bisa ditulis, jadi riwayat tidak tersimpan.';
+            $historyNote = $masalah . ' Riwayat tidak tersimpan, tapi pemantauan '
+                . 'tetap jalan — grafik dan persentase saja yang kosong.';
         }
     }
 

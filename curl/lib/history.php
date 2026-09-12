@@ -64,22 +64,30 @@ function history_file(string $baseDir): string
 }
 
 /**
- * Pastikan folder penyimpanan ada dan bisa ditulis.
+ * Siapkan folder penyimpanan. Kembalikan null kalau siap, atau alasan gagalnya.
+ *
+ * Alasannya perlu dibedakan, bukan disatukan jadi "tidak bisa ditulis": folder
+ * yang belum ada dan folder yang ada tapi tertutup hak tulis butuh tindakan
+ * yang berbeda, dan yang membaca pesan ini biasanya sedang berdiri di depan
+ * layar tanpa akses shell ke servernya.
  *
  * Kegagalan di sini tidak boleh menjatuhkan dashboard: pemantauan tetap jalan,
  * hanya riwayatnya yang tidak tersimpan.
  */
-function history_ensure_dir(string $dir): bool
+function history_prepare_dir(string $dir): ?string
 {
-    if (is_dir($dir)) {
-        return is_writable($dir);
+    if (!is_dir($dir)) {
+        if (!@mkdir($dir, 0775, true) && !is_dir($dir)) {
+            return 'Folder curl/data belum ada dan PHP tidak bisa membuatnya sendiri.';
+        }
     }
 
-    if (!@mkdir($dir, 0775, true) && !is_dir($dir)) {
-        return false;
+    if (!is_writable($dir)) {
+        return 'Folder curl/data ada, tapi akun yang menjalankan Apache tidak '
+            . 'punya hak tulis ke sana.';
     }
 
-    return is_writable($dir);
+    return null;
 }
 
 /**
