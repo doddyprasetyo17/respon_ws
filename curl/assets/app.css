@@ -1,0 +1,566 @@
+/*
+ * Respon WS -- tampilan dashboard.
+ *
+ * Bahasa visualnya sengaja meminjam layar monitor pasien: dasar petrol gelap,
+ * empat warna status yang naik bertingkat seperti lampu vital sign, angka
+ * monospace tabular supaya digit tidak bergeser tiap refresh, dan satu trace
+ * per layanan yang menjadi flatline begitu layanan berhenti menjawab.
+ *
+ * Tidak ada font atau stylesheet dari CDN. Dashboard ini justru paling
+ * dibutuhkan saat internet rumah sakit putus, jadi ia tidak boleh ikut rusak.
+ */
+
+:root {
+    --ground: #08131a;
+    --ground-2: #0a1922;
+    --panel: #0e222c;
+    --panel-hi: #12303e;
+    --line: #1a3948;
+    --line-soft: #142c38;
+
+    --text: #d7e9ef;
+    --text-dim: #93b3c0;
+    --muted: #648a99;
+
+    --good: #31e08d;
+    --slow: #ffc94d;
+    --error: #ff7a45;
+    --down: #ff4257;
+    --unset: #4a6a78;
+
+    --font-ui: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --font-mono: ui-monospace, "Cascadia Mono", "Cascadia Code", Consolas, "SF Mono", Menlo, monospace;
+
+    --gap: 14px;
+    --radius: 3px;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+html {
+    background: var(--ground);
+}
+
+body {
+    margin: 0;
+    min-height: 100vh;
+    background:
+        radial-gradient(120% 80% at 50% 0%, var(--ground-2) 0%, var(--ground) 60%);
+    color: var(--text);
+    font-family: var(--font-ui);
+    font-size: 15px;
+    line-height: 1.45;
+    -webkit-font-smoothing: antialiased;
+}
+
+/* ---------- Sweep: sisa waktu sampai pengecekan berikutnya ---------- */
+
+.sweep {
+    position: fixed;
+    inset: 0 0 auto 0;
+    height: 2px;
+    background: var(--line-soft);
+    z-index: 20;
+}
+
+.sweep__fill {
+    display: block;
+    height: 100%;
+    width: 100%;
+    transform-origin: left center;
+    background: linear-gradient(90deg, transparent, var(--good));
+    transition: transform 1s linear;
+}
+
+.sweep--busy .sweep__fill {
+    background: linear-gradient(90deg, transparent, var(--text-dim));
+}
+
+/* ---------- Topbar ---------- */
+
+.topbar {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px 24px;
+    padding: 18px 24px 16px;
+    background: rgba(8, 19, 26, 0.92);
+    backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--line);
+}
+
+.topbar__title {
+    margin: 0;
+    font-size: 17px;
+    font-weight: 600;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+}
+
+.topbar__subtitle {
+    margin: 2px 0 0;
+    font-size: 12px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
+}
+
+/* ---------- Vitals: hitungan per status ---------- */
+
+.vitals {
+    display: flex;
+    gap: 20px;
+}
+
+.vital {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    /* Cukup untuk dua digit, sehingga 9 -> 10 tidak melebarkan header. */
+    min-width: 52px;
+    padding-left: 10px;
+    border-left: 2px solid var(--edge, var(--line));
+}
+
+.vital--good { --edge: var(--good); }
+.vital--slow { --edge: var(--slow); }
+.vital--error { --edge: var(--error); }
+.vital--down { --edge: var(--down); }
+
+.vital__count {
+    font-family: var(--font-mono);
+    font-size: 26px;
+    font-weight: 600;
+    line-height: 1.1;
+    font-variant-numeric: tabular-nums;
+    color: var(--edge);
+}
+
+/* Nol bukan kabar buruk maupun kabar baik -- redupkan supaya angka yang
+   bukan nol yang menarik perhatian. */
+.vital__count[data-zero="true"] {
+    color: var(--unset);
+}
+
+.vital__label {
+    font-size: 10px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--muted);
+}
+
+/* ---------- Kontrol ---------- */
+
+.controls {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+/* Kapan data terakhir masuk. Jam dinding sengaja tidak ditampilkan: taskbar
+   sudah punya, dan yang benar-benar perlu diketahui operator adalah apakah
+   angka di layar masih segar. */
+.freshness {
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    /* Lebar dikunci supaya jam yang berdetak tidak menggeser tombol di
+       sebelahnya -- tombol yang bergerak bisa lolos dari klik operator. */
+    min-width: 84px;
+    white-space: nowrap;
+}
+
+.freshness__time {
+    font-family: var(--font-mono);
+    font-size: 15px;
+    font-variant-numeric: tabular-nums;
+    color: var(--text);
+}
+
+.freshness__label {
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
+}
+
+.btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 9px 14px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--panel);
+    color: var(--text);
+    font-family: inherit;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.btn:hover {
+    background: var(--panel-hi);
+    border-color: var(--muted);
+}
+
+.btn:focus-visible {
+    outline: 2px solid var(--good);
+    outline-offset: 2px;
+}
+
+.btn[disabled] {
+    opacity: 0.5;
+    cursor: progress;
+}
+
+.btn__countdown {
+    min-width: 30px;
+    text-align: right;
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    color: var(--muted);
+}
+
+/* Label alarm berganti antar beberapa teks dengan panjang berbeda; lebarnya
+   dikunci agar tombol tidak berubah ukuran dan menggeser kontrol di sebelahnya. */
+#alarmLabel {
+    display: inline-block;
+    /* Selebar teks terpanjang ("Alarm berbunyi"), supaya lebar tombol tetap. */
+    min-width: 112px;
+    text-align: left;
+}
+
+.btn--toggle[aria-pressed="true"] {
+    border-color: var(--slow);
+    color: var(--slow);
+}
+
+.btn__icon {
+    font-size: 13px;
+    filter: grayscale(1);
+}
+
+.btn--toggle[aria-pressed="true"] .btn__icon {
+    filter: none;
+}
+
+/* ---------- Banner kegagalan ---------- */
+
+.banner {
+    margin: 0;
+    padding: 11px 24px;
+    background: rgba(255, 66, 87, 0.12);
+    border-bottom: 1px solid var(--down);
+    color: #ffd2d8;
+    font-size: 13px;
+}
+
+.banner--static {
+    border-top: 1px solid var(--down);
+}
+
+/* ---------- Papan & grup ---------- */
+
+.board {
+    padding: 26px 24px 40px;
+}
+
+.group + .group {
+    margin-top: 30px;
+}
+
+.group__name {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 0 0 12px;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--muted);
+}
+
+.group__name::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background: var(--line-soft);
+}
+
+.group__count {
+    order: 3;
+    font-family: var(--font-mono);
+    color: var(--unset);
+}
+
+.grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(196px, 1fr));
+    gap: var(--gap);
+}
+
+/* ---------- Kartu layanan ---------- */
+
+.card {
+    --accent: var(--unset);
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    padding: 13px 14px 11px;
+    background: var(--panel);
+    border: 1px solid var(--line-soft);
+    border-left: 2px solid var(--accent);
+    border-radius: var(--radius);
+    transition: border-color 0.25s ease, background 0.25s ease;
+}
+
+.card[data-status="good"] { --accent: var(--good); }
+.card[data-status="slow"] { --accent: var(--slow); }
+.card[data-status="error"] { --accent: var(--error); }
+.card[data-status="down"] { --accent: var(--down); }
+
+.card[data-status="down"] {
+    background: linear-gradient(180deg, rgba(255, 66, 87, 0.09), transparent 70%), var(--panel);
+    border-color: rgba(255, 66, 87, 0.35);
+}
+
+.card__head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 32px;
+}
+
+.dot {
+    flex: none;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--accent);
+}
+
+/* Hanya layanan yang benar-benar putus yang berkedip. Kalau semuanya
+   bergerak, tidak ada yang menonjol. */
+.card[data-status="down"] .dot {
+    animation: pulse 1.1s ease-in-out infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(255, 66, 87, 0.55); }
+    70% { opacity: 0.65; box-shadow: 0 0 0 6px rgba(255, 66, 87, 0); }
+}
+
+.card__name {
+    margin: 0;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+}
+
+.card__reading {
+    display: flex;
+    align-items: baseline;
+    gap: 4px;
+    margin: 6px 0 2px;
+}
+
+.card__value {
+    font-family: var(--font-mono);
+    font-size: 30px;
+    font-weight: 500;
+    line-height: 1;
+    /* Tabular: angka berganti tiap siklus, lebarnya harus tetap. */
+    font-variant-numeric: tabular-nums;
+    color: var(--accent);
+}
+
+.card[data-status="pending"] .card__value,
+.card[data-status="unset"] .card__value,
+.card[data-status="down"] .card__value {
+    color: var(--unset);
+}
+
+.card__unit {
+    font-size: 11px;
+    color: var(--muted);
+}
+
+/* ---------- Trace ---------- */
+
+.trace {
+    display: block;
+    width: 100%;
+    height: 34px;
+    margin: 4px 0 8px;
+    overflow: visible;
+}
+
+.trace__line {
+    fill: none;
+    stroke: var(--accent);
+    stroke-width: 1.5;
+    stroke-linejoin: round;
+    stroke-linecap: round;
+    vector-effect: non-scaling-stroke;
+    opacity: 0.9;
+}
+
+.card[data-status="pending"] .trace__line,
+.card[data-status="unset"] .trace__line {
+    opacity: 0.3;
+    stroke-dasharray: 3 4;
+}
+
+/* Layanan mati menampilkan garis datar -- sengaja dibaca seperti asistol. */
+.card[data-status="down"] .trace__line {
+    opacity: 0.85;
+}
+
+.card__meta {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+    margin: auto 0 0;
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.card__label {
+    color: var(--accent);
+    font-weight: 600;
+}
+
+.card[data-status="pending"] .card__label,
+.card[data-status="unset"] .card__label {
+    color: var(--muted);
+    font-weight: 400;
+}
+
+.card__code {
+    flex: none;
+    font-family: var(--font-mono);
+    color: var(--unset);
+}
+
+/* ---------- Footer ---------- */
+
+.footer {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 14px 24px 26px;
+    border-top: 1px solid var(--line-soft);
+    color: var(--muted);
+    font-size: 11px;
+}
+
+.footer__sep {
+    color: var(--line);
+}
+
+/* ---------- Halaman setup ---------- */
+
+.setup {
+    max-width: 640px;
+    margin: 14vh auto;
+    padding: 0 24px;
+}
+
+.setup__title {
+    margin: 0 0 10px;
+    font-size: 15px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--slow);
+}
+
+.setup__message {
+    margin: 0 0 18px;
+    color: var(--text);
+}
+
+.setup__code {
+    margin: 0 0 14px;
+    padding: 14px 16px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    color: var(--text-dim);
+    font-family: var(--font-mono);
+    font-size: 13px;
+    white-space: pre-wrap;
+    overflow-x: auto;
+}
+
+.setup__hint {
+    margin: 0;
+    color: var(--muted);
+    font-size: 13px;
+}
+
+/* ---------- Responsif ---------- */
+
+@media (max-width: 720px) {
+    .topbar {
+        padding: 14px 16px;
+        gap: 14px;
+    }
+
+    /* Di layar sempit ringkasan tetap tepat di bawah judul: hitungan status
+       adalah hal pertama yang dicari, bukan tombolnya. */
+    .vitals {
+        order: 2;
+        width: 100%;
+        justify-content: space-between;
+        gap: 12px;
+    }
+
+    .controls {
+        order: 3;
+        width: 100%;
+    }
+
+    .controls {
+        flex-wrap: wrap;
+        justify-content: flex-end;
+    }
+
+    .board,
+    .footer,
+    .banner {
+        padding-left: 16px;
+        padding-right: 16px;
+    }
+
+    .grid {
+        grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    }
+
+    .card__value {
+        font-size: 25px;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    * {
+        animation-duration: 0.001ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.001ms !important;
+    }
+}

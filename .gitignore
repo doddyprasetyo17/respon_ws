@@ -1,0 +1,16 @@
+# Konfigurasi berisi daftar endpoint internal RS dan setelan per-deployment.
+# Salin config.example.php -> config.php di tiap server.
+/curl/config.php
+
+# Catatan kerja Claude Code
+CLAUDE.md
+
+# Log & file sementara
+logs/
+*.log
+*.tmp
+
+# Sampah OS
+.DS_Store
+Thumbs.db
+desktop.ini

@@ -1,5 +1,7 @@
 <?php
-// Redirect to the index page in the parent folder
-header("Location: curl/index.php");
-exit();
-?>
+
+// Dashboard-nya ada di subfolder curl/. Redirect ini dipertahankan supaya
+// bookmark dan shortcut lama di komputer IT tetap berfungsi.
+
+header('Location: curl/index.php', true, 302);
+exit;

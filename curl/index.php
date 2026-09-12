@@ -1,266 +1,175 @@
-<!-- Prasetyo -->
 <?php
-error_reporting(E_ALL);
-ini_set('display_errors', 1);
+
+declare(strict_types=1);
+
+/**
+ * Kerangka halaman dashboard.
+ *
+ * Halaman ini tidak menjalankan probe apa pun. Ia hanya merender satu kartu
+ * kosong per layanan dari config, lalu app.js mengisinya dari api.php.
+ */
+
+require __DIR__ . '/lib/monitor.php';
+
 date_default_timezone_set('Asia/Jakarta');
 
-function secure_encrypt($plaintext, $secret_key)
+$configError = null;
+$config      = monitor_defaults();
+$targets     = [];
+
+try {
+    $config  = monitor_load_config(__DIR__ . '/config.php');
+    $targets = monitor_flatten_groups($config['groups']);
+} catch (Throwable $e) {
+    $configError = $e->getMessage();
+}
+
+error_reporting($config['debug'] ? E_ALL : 0);
+ini_set('display_errors', $config['debug'] ? '1' : '0');
+
+/** Kelompokkan ulang target per grup untuk kebutuhan render. */
+$byGroup = [];
+foreach ($targets as $target) {
+    $byGroup[$target['group']][] = $target;
+}
+
+function e(?string $value): string
 {
-    $key = hash('sha256', $secret_key, true); // 32 byte
-    $iv  = random_bytes(16); // AES block size
-
-    $ciphertext = openssl_encrypt(
-        $plaintext,
-        'AES-256-CBC',
-        $key,
-        OPENSSL_RAW_DATA,
-        $iv
-    );
-
-    // HMAC untuk anti-tamper
-    $hmac = hash_hmac('sha256', $ciphertext, $key, true);
-
-    // Gabung: iv + hmac + ciphertext
-    return base64_encode($iv . $hmac . $ciphertext);
+    return htmlspecialchars((string) $value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
 }
 
-function secure_decrypt($encrypted, $secret_key)
-{
-    $data = base64_decode($encrypted);
-    if ($data === false || strlen($data) < 48) {
-        return false;
-    }
-
-    $key = hash('sha256', $secret_key, true);
-
-    $iv          = substr($data, 0, 16);
-    $hmac        = substr($data, 16, 32);
-    $ciphertext  = substr($data, 48);
-
-    // Validasi HMAC
-    $calc_hmac = hash_hmac('sha256', $ciphertext, $key, true);
-    if (!hash_equals($hmac, $calc_hmac)) {
-        return false; // data diubah
-    }
-
-    return openssl_decrypt(
-        $ciphertext,
-        'AES-256-CBC',
-        $key,
-        OPENSSL_RAW_DATA,
-        $iv
-    );
-}
-
-
-/* ================= URL LIST ================= */
-$urls = [
-    'Update Waktu BPJS' => 'https://apijkn.bpjs-kesehatan.go.id/antreanrs/antrean/updatewaktu',
-    'Add Antrean BPJS' => 'https://apijkn.bpjs-kesehatan.go.id/antreanrs/antrean/add',
-    'Batal Antrean BPJS' => 'https://apijkn.bpjs-kesehatan.go.id/antreanrs/antrean/batal',
-    'Add Farmasi BPJS' => 'https://apijkn.bpjs-kesehatan.go.id/antreanrs/antrean/farmasi/add',
-    'Finger BPJS' => 'https://fp.bpjs-kesehatan.go.id/finger-rest',
-    'Vclaim Rest BPJS' => 'https://apijkn.bpjs-kesehatan.go.id/vclaim-rest',
-    'Aplicare BPJS' => 'https://new-api.bpjs-kesehatan.go.id/aplicaresws',
-    'I-Care BPJS' => 'https://apijkn.bpjs-kesehatan.go.id/wsihs/api/rs',
-    'Jaringan RS' => 'https://www.google.com/',
-    'Manajemen Bed RS' => 'https://rsudjoharbaru.jakarta.go.id/dashboardbed/',
-    'Auth Satu Sehat' => 'https://api-satusehat.kemkes.go.id/oauth2/v1',
-    'FHIR Satu Sehat' => 'https://api-satusehat.kemkes.go.id/fhir-r4/v1',
-    'Patient Journey Dinas Kesehatan' => 'https://api-dinkes.jakarta.go.id/patientjourney/api/v1',
-];
-
-/* ================= CEK URL ================= */
-function getUrlInfo($url)
-{
-    if (trim($url) === '') {
-        return [
-            'latency' => 0,
-            'status' => 'Belum Diset',
-            'color' => 'gray'
-        ];
-    }
-
-    $ch = curl_init($url);
-    curl_setopt_array($ch, [
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_TIMEOUT => 3,
-        CURLOPT_CONNECTTIMEOUT => 3,
-        CURLOPT_SSL_VERIFYPEER => false,
-        CURLOPT_SSL_VERIFYHOST => false
-    ]);
-
-    $start = microtime(true);
-    $response = curl_exec($ch);
-    $time = round((microtime(true) - $start) * 1000, 2);
-
-    if ($response === false) {
-        curl_close($ch);
-        return [
-            'latency' => 0,
-            'status' => 'Terputus',
-            'color' => 'red'
-        ];
-    }
-
-    curl_close($ch);
-
-    return [
-        'latency' => $time,
-        'status' => ($time < 500 ? 'Jaringan Bagus' : 'Lambat'),
-        'color' => ($time < 500 ? 'green' : 'orange')
-    ];
-}
-
-/* ================= PROSES DATA ================= */
-$url_infos = [];
-
-foreach ($urls as $name => $url) {
-    $url_infos[$name] = getUrlInfo($url);
-}
-/* ================= SECURE FOOTER ================= */
-
-$footer_secret_key = 'my_super_secret_key_CHANGE_THIS';
-
-// Isi footer asli
-$footer_plain = date("Y") . " Prazz. All rights reserved.";
-
-// Enkripsi (sekali per request)
-$footer_encrypted = secure_encrypt($footer_plain, $footer_secret_key);
-
-// Dekripsi + validasi
-$footer_decrypted = secure_decrypt($footer_encrypted, $footer_secret_key);
-
-// Valid flag
-$footer_valid = ($footer_decrypted === $footer_plain);
-
+$assetVersion = '2.3';
 
 ?>
-
 <!DOCTYPE html>
 <html lang="id">
 
 <head>
     <meta charset="UTF-8">
-    <title>Response Time Server WS</title>
-    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="dark">
+    <title><?= e($config['title']) ?><?= $config['subtitle'] !== '' ? ' · ' . e($config['subtitle']) : '' ?></title>
+    <link rel="stylesheet" href="assets/app.css?v=<?= e($assetVersion) ?>">
 </head>
 
 <body>
 
-    <div class="container mt-4">
-        <h3>Response Time Server WS</h3>
+<?php if ($configError !== null): ?>
 
-        <div class="d-flex align-items-center mb-3">
-            <button class="btn btn-primary mr-3" onclick="manualRefresh()">
-                🔄 Refresh Sekarang
-            </button>
-            <div>
-                ⏳ Refresh otomatis dalam
-                <b><span id="countdown">120</span></b> detik
-                <span id="pauseInfo" class="text-warning ml-2" style="display:none;">
-                    (Paused)
-                </span>
+    <main class="setup" role="main">
+        <h1 class="setup__title">Konfigurasi belum siap</h1>
+        <p class="setup__message"><?= e($configError) ?></p>
+        <pre class="setup__code">cd <?= e(dirname(__DIR__)) ?>
+copy curl\config.example.php curl\config.php</pre>
+        <p class="setup__hint">Setelah file dibuat, sesuaikan daftar URL di dalamnya lalu muat ulang halaman ini.</p>
+    </main>
+
+<?php else: ?>
+
+    <div class="sweep" id="sweep" aria-hidden="true"><span class="sweep__fill" id="sweepFill"></span></div>
+
+    <header class="topbar">
+        <div class="topbar__identity">
+            <h1 class="topbar__title"><?= e($config['title']) ?></h1>
+            <?php if ($config['subtitle'] !== ''): ?>
+                <p class="topbar__subtitle"><?= e($config['subtitle']) ?></p>
+            <?php endif; ?>
+        </div>
+
+        <div class="vitals" id="vitals" role="status" aria-live="polite" aria-label="Ringkasan status layanan">
+            <div class="vital vital--good">
+                <span class="vital__count" data-summary="good">–</span>
+                <span class="vital__label">Bagus</span>
+            </div>
+            <div class="vital vital--slow">
+                <span class="vital__count" data-summary="slow">–</span>
+                <span class="vital__label">Lambat</span>
+            </div>
+            <div class="vital vital--error">
+                <span class="vital__count" data-summary="error">–</span>
+                <span class="vital__label">Error</span>
+            </div>
+            <div class="vital vital--down">
+                <span class="vital__count" data-summary="down">–</span>
+                <span class="vital__label">Putus</span>
             </div>
         </div>
-        <div class="row">
-            <?php foreach ($url_infos as $name => $info): ?>
-                <div class="col-md-4">
-                    <div class="border rounded p-3 mb-3"
-                        data-status="<?= $info['status'] ?>"
-                        style="border-color:<?= $info['color'] ?>">
-                        <h5><?= $name ?></h5>
-                        <p>Status: <b style="color:<?= $info['color'] ?>"><?= $info['status'] ?></b></p>
-                        <p>Latency: <?= $info['latency'] ?> ms</p>
-                    </div>
-                </div>
-            <?php endforeach; ?>
+
+        <div class="controls">
+            <p class="freshness">
+                <span class="freshness__time" id="cycleNote">--:--:--</span>
+                <span class="freshness__label">Diperbarui</span>
+            </p>
+            <button type="button" class="btn" id="refreshBtn">
+                Cek sekarang
+                <span class="btn__countdown" id="countdown"></span>
+            </button>
+            <button type="button" class="btn btn--toggle" id="alarmBtn" aria-pressed="false">
+                <span class="btn__icon" aria-hidden="true">🔔</span>
+                <span id="alarmLabel">Alarm mati</span>
+            </button>
         </div>
+    </header>
 
-    </div>
-    <footer class="text-center mt-5 p-3"
-        style="background:#212529;color:#fff;font-size:13px;">
+    <div class="banner" id="banner" role="alert" hidden></div>
 
-        <?php if (!$footer_valid): ?>
-            <span class="text-danger">pras@rsudjb2025</span>
-        <?php else: ?>
-            <?= htmlspecialchars($footer_decrypted, ENT_QUOTES, 'UTF-8') ?>
-        <?php endif; ?>
+    <noscript>
+        <div class="banner banner--static">
+            Dashboard ini butuh JavaScript aktif untuk mengambil data pengecekan.
+        </div>
+    </noscript>
 
+    <main class="board" id="board"
+          data-refresh="<?= (int) $config['refresh_interval'] ?>"
+          data-good="<?= (int) $config['threshold_good'] ?>"
+          data-slow="<?= (int) $config['threshold_slow'] ?>">
+
+        <?php foreach ($byGroup as $groupName => $services): ?>
+            <section class="group">
+                <h2 class="group__name">
+                    <?= e($groupName) ?>
+                    <span class="group__count"><?= count($services) ?></span>
+                </h2>
+
+                <div class="grid">
+                    <?php foreach ($services as $service): ?>
+                        <article class="card" data-svc="<?= e($service['id']) ?>" data-status="pending">
+                            <div class="card__head">
+                                <span class="dot" aria-hidden="true"></span>
+                                <h3 class="card__name"><?= e($service['name']) ?></h3>
+                            </div>
+
+                            <p class="card__reading">
+                                <span class="card__value" data-field="latency">–––</span>
+                                <span class="card__unit">ms</span>
+                            </p>
+
+                            <svg class="trace" viewBox="0 0 200 40" preserveAspectRatio="none" aria-hidden="true">
+                                <polyline class="trace__line" data-field="trace" points="0,20 200,20" />
+                            </svg>
+
+                            <p class="card__meta">
+                                <span class="card__label" data-field="label">Menunggu…</span>
+                                <span class="card__code" data-field="code"></span>
+                            </p>
+                        </article>
+                    <?php endforeach; ?>
+                </div>
+            </section>
+        <?php endforeach; ?>
+    </main>
+
+    <footer class="footer">
+        <span>&copy; <?= date('Y') ?><?= $config['credit'] !== '' ? ' ' . e($config['credit']) : '' ?></span>
+        <span class="footer__sep">·</span>
+        <span>Latency diukur sampai byte pertama (TTFB)</span>
+        <span class="footer__sep">·</span>
+        <span id="cycleDuration">–</span>
     </footer>
-    <script>
-        const REFRESH_INTERVAL = 30; // detik (2 menit)
-        let remaining = REFRESH_INTERVAL;
-        let timer = null;
-        let isPaused = false;
 
-        function updateCountdown() {
-            if (isPaused) return;
+    <script src="assets/app.js?v=<?= e($assetVersion) ?>" defer></script>
 
-            remaining--;
-            if (remaining <= 0) {
-                clearInterval(timer);
-                location.reload();
-                return;
-            }
-
-            document.getElementById('countdown').innerText = remaining;
-        }
-
-        function startCountdown() {
-            clearInterval(timer); // 🔒 anti double timer
-            remaining = REFRESH_INTERVAL;
-            document.getElementById('countdown').innerText = remaining;
-
-            timer = setInterval(updateCountdown, 1000);
-        }
-
-        function manualRefresh() {
-            location.reload();
-        }
-
-        // Auto pause kalau tab tidak aktif
-        document.addEventListener("visibilitychange", function() {
-            isPaused = document.hidden;
-            document.getElementById('pauseInfo').style.display =
-                document.hidden ? 'inline' : 'none';
-        });
-
-        startCountdown();
-    </script>
-
-    <audio id="alarmSound" loop>
-        <source src="https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg" type="audio/ogg">
-    </audio>
-    <script>
-        const alarm = document.getElementById('alarmSound');
-        let alarmPlaying = false;
-
-        function checkAlarm() {
-            const statuses = document.querySelectorAll('[data-status]');
-            let hasDown = false;
-
-            statuses.forEach(el => {
-                if (el.dataset.status === 'Terputus') {
-                    hasDown = true;
-                }
-            });
-
-            if (hasDown && !alarmPlaying) {
-                alarm.play();
-                alarmPlaying = true;
-            }
-
-            if (!hasDown && alarmPlaying) {
-                alarm.pause();
-                alarm.currentTime = 0;
-                alarmPlaying = false;
-            }
-        }
-
-        checkAlarm();
-    </script>
-
+<?php endif; ?>
 
 </body>
 
