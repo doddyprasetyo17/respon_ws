@@ -76,9 +76,11 @@ besar halaman yang kebetulan diminta.
 
 ## Yang ditampilkan di layar
 
-Baris paling atas adalah ringkasan keadaan. Saat semua normal ia hanya satu
-baris tenang; begitu ada gangguan ia berubah menjadi daftar kerja berisi apa
-yang rusak, sejak kapan, dan berapa kali terganggu belakangan ini.
+Baris paling atas adalah ringkasan keadaan. Tingginya selalu sama, berapa pun
+jumlah gangguannya. Saat semua normal ia satu baris tenang yang tidak bergerak;
+begitu ada gangguan, isinya berjalan kanan-ke-kiri berisi apa yang rusak, sejak
+kapan, dan berapa kali terganggu belakangan ini — tapi hanya kalau isinya
+memang tidak muat dalam satu baris.
 
 Tiap kartu layanan berisi:
 
@@ -96,8 +98,24 @@ Tiap kartu layanan berisi:
 Arahkan kursor ke kartu untuk melihat keterangan lengkap: waktu connect,
 nilai lazim layanan itu, jumlah gangguan, dan jumlah pengecekan.
 
-Tata letak menyesuaikan lebar layar: di monitor besar ruang IT angka dan
-kartu membesar supaya terbaca dari jauh, di laptop informasinya dirapatkan.
+### Mode TV
+
+Di layar lebar (mulai 1600×800) halaman otomatis masuk mode TV: tinggi dikunci
+ke satu layar, tidak ada gulir, tombol kontrol dan footer disembunyikan, dan
+semua kartu dibuat setinggi persis sama. Tambahkan `?tv=1` pada URL untuk
+memaksanya — berguna untuk melihat tampilan TV dari laptop — atau `?tv=0` untuk
+memaksa tampilan biasa.
+
+Ukurannya dihitung dari tinggi layar, jadi mode ini benar di 4K maupun 2K tanpa
+disetel ulang. Jumlah kolom kartunya satu angka di `curl/index.php`
+(`$tvCols`, default 4).
+
+Karena tombolnya hilang di mode TV, alarm dinyalakan dengan menekan **`A`** pada
+keyboard. Tombol itu juga yang membuat browser mengizinkan suara keluar: tanpa
+satu gestur pengguna, alarm akan diam saja meski statusnya tampak aktif.
+
+Di bawah 1600×800 tampilannya seperti biasa: bisa digulir, tombol lengkap, dan
+kerapatannya menyesuaikan lebar layar.
 
 ### Soal angka ketersediaan
 

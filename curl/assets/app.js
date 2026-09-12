@@ -31,9 +31,10 @@
         alarmLabel: document.getElementById('alarmLabel'),
         sweep: document.getElementById('sweep'),
         sweepFill: document.getElementById('sweepFill'),
-        state: document.getElementById('state'),
-        stateText: document.getElementById('stateText'),
-        stateList: document.getElementById('stateList')
+        ticker: document.getElementById('ticker'),
+        tickerRun: document.getElementById('tickerRun'),
+        tickerSeg: document.getElementById('tickerSeg'),
+        tickerSegClone: document.getElementById('tickerSegClone')
     };
 
     var remaining = REFRESH;
@@ -237,7 +238,7 @@
         }
 
         renderSummary(data.summary || {});
-        renderState(data.incidents || [], data.summary || {}, data);
+        renderTicker(data.incidents || [], data.summary || {}, data);
 
         if (els.cycleNote) {
             els.cycleNote.textContent = data.checked_at_human || '--:--:--';
@@ -328,70 +329,143 @@
         }
     }
 
-    /* ---------- Baris keadaan ---------- */
+    /* ---------- Baris keadaan: ticker berjalan ---------- */
 
-    function renderState(incidents, summary, data) {
-        if (!els.state || !els.stateText || !els.stateList) {
+    /*
+     * Ticker menampung berapa pun jumlah gangguan tanpa menambah tinggi
+     * halaman: isinya berjalan di dalam satu baris. Versi sebelumnya adalah
+     * daftar yang memanjang, dan panjangnya itu mendorong kartu keluar layar
+     * tepat pada saat kartu paling perlu dilihat.
+     *
+     * Kecepatan tetap dalam piksel per detik, bukan durasi tetap. Dengan durasi
+     * tetap, satu gangguan akan melesat terlalu cepat untuk dibaca dan delapan
+     * gangguan akan merayap.
+     */
+    var TICKER_PX_PER_S = 90;
+
+    /*
+     * Tanda tangan isi ticker: layanan mana dengan status apa. Sengaja tidak
+     * memuat angka durasi. Membangun ulang isi berarti memulai animasi dari
+     * awal, dan kalau tanda tangannya ikut berubah tiap siklus, teks akan
+     * melompat kembali ke awal setiap 30 detik dan gangguan di ujung daftar
+     * tidak akan pernah terbaca. Selama daftarnya sama, yang diperbarui hanya
+     * angka durasinya, di tempat.
+     */
+    var tickerSig = null;
+
+    function renderTicker(incidents, summary, data) {
+        if (!els.ticker || !els.tickerSeg || !els.tickerSegClone || !els.tickerRun) {
             return;
         }
-
-        els.stateList.textContent = '';
-
-        if (incidents.length === 0) {
-            els.state.dataset.state = 'ok';
-            els.stateText.textContent = 'Semua layanan normal · ' +
-                (summary.good || 0) + ' dari ' + (summary.total || 0) + ' menjawab cepat';
-            return;
-        }
-
-        els.state.dataset.state = 'problem';
-        els.stateText.textContent = incidents.length + ' layanan perlu diperiksa';
 
         var sekarang = data.server_time || Math.floor(Date.now() / 1000);
-        var frag = document.createDocumentFragment();
+        var i;
 
-        // Daftar dibatasi supaya panel ini tidak mendorong seluruh kartu keluar
-        // layar saat banyak yang bermasalah -- justru saat itulah kartu paling
-        // perlu terlihat. Sisanya tetap tampak sebagai kartu merah di bawah.
-        var BATAS = 6;
-        var tampil = Math.min(incidents.length, BATAS);
+        if (incidents.length === 0) {
+            tickerSig = 'ok';
+            els.ticker.dataset.state = 'ok';
+            tulisTicker(fragTenang(summary), false);
+            return;
+        }
 
-        for (var i = 0; i < tampil; i++) {
-            var ins = incidents[i];
-            var li = document.createElement('li');
-            li.className = 'state__item';
-            li.setAttribute('data-status', ins.status);
+        var cap = [];
+        for (i = 0; i < incidents.length; i++) {
+            cap.push(incidents[i].id + ':' + incidents[i].status + ':' + incidents[i].label);
+        }
+        var sig = cap.join('|');
 
-            var nama = document.createElement('span');
-            nama.className = 'state__name';
-            nama.textContent = ins.name;
+        els.ticker.dataset.state = 'problem';
 
-            var apa = document.createElement('span');
-            apa.className = 'state__what';
-            apa.textContent = ins.status === 'slow' && typeof ins.latency_ms === 'number'
-                ? ins.label + ' ' + Math.round(ins.latency_ms) + ' ms'
-                : ins.label;
-
-            var meta = document.createElement('span');
-            meta.className = 'state__meta';
-            meta.textContent = metaInsiden(ins, sekarang, data);
-
-            li.appendChild(nama);
-            li.appendChild(apa);
-            if (meta.textContent) {
-                li.appendChild(meta);
+        if (sig === tickerSig) {
+            var metas = els.ticker.querySelectorAll('.ticker__meta');
+            for (i = 0; i < metas.length; i++) {
+                metas[i].textContent = metaInsiden(
+                    incidents[i % incidents.length], sekarang, data);
             }
-            frag.appendChild(li);
+            return;
         }
 
-        if (incidents.length > tampil) {
-            var sisa = document.createElement('li');
-            sisa.className = 'state__item state__item--more';
-            sisa.textContent = '+ ' + (incidents.length - tampil) + ' layanan lain bermasalah';
-            frag.appendChild(sisa);
+        tickerSig = sig;
+        tulisTicker(fragGangguan(incidents, sekarang, data), true);
+    }
+
+    function fragTenang(summary) {
+        var frag = document.createDocumentFragment();
+        frag.appendChild(span('ticker__head', 'Semua layanan normal · ' +
+            (summary.good || 0) + ' dari ' + (summary.total || 0) + ' menjawab cepat'));
+        return frag;
+    }
+
+    function fragGangguan(incidents, sekarang, data) {
+        var frag = document.createDocumentFragment();
+        frag.appendChild(span('ticker__head', incidents.length + ' layanan perlu diperiksa'));
+
+        for (var i = 0; i < incidents.length; i++) {
+            var ins = incidents[i];
+            var item = document.createElement('span');
+            item.className = 'ticker__item';
+            item.setAttribute('data-status', ins.status);
+
+            item.appendChild(span('ticker__name', ins.name));
+            item.appendChild(span('ticker__what',
+                ins.status === 'slow' && typeof ins.latency_ms === 'number'
+                    ? ins.label + ' ' + Math.round(ins.latency_ms) + ' ms'
+                    : ins.label));
+            // Selalu dipasang, walau kosong: jumlah simpul meta harus tetap
+            // sama dengan jumlah gangguan supaya pembaruan di tempat di atas
+            // tidak salah alamat.
+            item.appendChild(span('ticker__meta', metaInsiden(ins, sekarang, data)));
+
+            frag.appendChild(item);
         }
 
-        els.stateList.appendChild(frag);
+        return frag;
+    }
+
+    /**
+     * Isi ticker, lalu -- kalau ia harus berjalan -- salin isinya ke segmen
+     * kedua dan hitung durasi satu putaran.
+     *
+     * Segmen kedua yang identik itulah yang membuat putaran tidak berjeda:
+     * animasi menggeser separuh lebar, jadi segmen kedua tiba persis di tempat
+     * yang pertama. Saat tidak berjalan, segmen kedua dikosongkan -- kalau
+     * tidak, teksnya terlihat tercetak dua kali bersebelahan.
+     */
+    function tulisTicker(frag, bolehJalan) {
+        els.tickerSeg.textContent = '';
+        els.tickerSegClone.textContent = '';
+        els.tickerSeg.appendChild(frag);
+
+        // Isi yang sudah muat seluruhnya tidak perlu digeser. Satu gangguan
+        // biasanya muat, dan menggerakkannya hanya membuat teks yang sebetulnya
+        // terbaca jadi mengejar-ngejar mata.
+        var jarak = parseFloat(
+            window.getComputedStyle(els.tickerSeg).paddingRight) || 0;
+        var isi = els.tickerSeg.scrollWidth - jarak;
+        var ruang = els.tickerSeg.parentNode.parentNode.clientWidth;
+        var jalan = bolehJalan && isi > ruang;
+
+        els.ticker.dataset.run = jalan ? 'true' : 'false';
+
+        if (!jalan) {
+            els.tickerRun.style.removeProperty('--ticker-speed');
+            return;
+        }
+
+        var anak = els.tickerSeg.childNodes;
+        for (var k = 0; k < anak.length; k++) {
+            els.tickerSegClone.appendChild(anak[k].cloneNode(true));
+        }
+
+        els.tickerRun.style.setProperty('--ticker-speed',
+            Math.max(12, Math.round((isi + jarak) / TICKER_PX_PER_S)) + 's');
+
+        // Mengganti isi tidak memulai ulang animasi dengan sendirinya. Tanpa
+        // paksaan ini, daftar gangguan yang baru masuk di tengah putaran lama
+        // dan separuh isinya terlewat satu putaran penuh.
+        els.tickerRun.style.animation = 'none';
+        void els.tickerRun.offsetWidth;
+        els.tickerRun.style.animation = '';
     }
 
     function metaInsiden(ins, sekarang, data) {
@@ -416,6 +490,13 @@
     }
 
     /* ---------- Utilitas DOM ---------- */
+
+    function span(cls, text) {
+        var node = document.createElement('span');
+        node.className = cls;
+        node.textContent = text;
+        return node;
+    }
 
     function setField(card, field, value) {
         var node = card.querySelector('[data-field="' + field + '"]');
@@ -514,38 +595,72 @@
         }
         els.alarmBtn.setAttribute('aria-pressed', alarmOn ? 'true' : 'false');
 
+        var teks;
         if (!alarmOn) {
-            els.alarmLabel.textContent = 'Alarm mati';
+            teks = 'Alarm mati';
         } else if (audioCtx && audioCtx.state === 'running') {
-            els.alarmLabel.textContent = anyDown ? 'Alarm berbunyi' : 'Alarm aktif';
+            teks = anyDown ? 'Alarm berbunyi' : 'Alarm aktif';
         } else {
-            els.alarmLabel.textContent = 'Izinkan suara';
+            teks = 'Izinkan suara';
         }
+
+        els.alarmLabel.textContent = teks;
+        // Di mode TV labelnya disembunyikan dan hanya ikonnya yang tampak,
+        // jadi keterangannya dipindahkan ke tooltip.
+        els.alarmBtn.title = teks + ' — tekan A untuk mengubah';
+    }
+
+    /**
+     * Nyalakan / matikan alarm.
+     *
+     * Browser hanya mengizinkan audio setelah ada interaksi pengguna, jadi
+     * konteks audio dibuka di dalam sini -- bukan saat halaman dimuat.
+     */
+    function toggleAlarm() {
+        if (!alarmOn) {
+            alarmOn = true;
+            saveAlarmPref(true);
+            if (ensureAudio()) {
+                beep();
+            }
+        } else if (!audioCtx || audioCtx.state !== 'running') {
+            // Preferensi sudah menyala dari kunjungan sebelumnya, tapi suara
+            // belum diizinkan browser. Interaksi inilah yang membukanya.
+            if (ensureAudio()) {
+                beep();
+            }
+        } else {
+            alarmOn = false;
+            saveAlarmPref(false);
+        }
+        updateAlarm();
     }
 
     if (els.alarmBtn) {
-        els.alarmBtn.addEventListener('click', function () {
-            // Browser hanya mengizinkan audio setelah interaksi; klik ini adalah
-            // interaksi tersebut, jadi konteks audio dibuka di sini.
-            if (!alarmOn) {
-                alarmOn = true;
-                saveAlarmPref(true);
-                if (ensureAudio()) {
-                    beep();
-                }
-            } else if (!audioCtx || audioCtx.state !== 'running') {
-                // Preferensi sudah menyala dari kunjungan sebelumnya, tapi suara
-                // belum diizinkan browser. Klik ini yang membukanya.
-                if (ensureAudio()) {
-                    beep();
-                }
-            } else {
-                alarmOn = false;
-                saveAlarmPref(false);
-            }
-            updateAlarm();
-        });
+        els.alarmBtn.addEventListener('click', toggleAlarm);
     }
+
+    /*
+     * Tombol "A". Mode TV menyembunyikan kontrol karena layar itu tidak punya
+     * mouse -- tapi kebijakan autoplay browser tetap menolak membunyikan apa
+     * pun sebelum ada gestur pengguna. Penekanan tombol adalah gestur yang sah,
+     * jadi ini satu-satunya cara alarm bisa diaktifkan di TV.
+     */
+    document.addEventListener('keydown', function (ev) {
+        if (ev.key !== 'a' && ev.key !== 'A') {
+            return;
+        }
+        if (ev.ctrlKey || ev.altKey || ev.metaKey) {
+            return;
+        }
+        var fokus = ev.target;
+        if (fokus && (fokus.tagName === 'INPUT' || fokus.tagName === 'TEXTAREA' ||
+                fokus.isContentEditable)) {
+            return;
+        }
+        ev.preventDefault();
+        toggleAlarm();
+    });
 
     /* ---------- Siklus pengecekan ---------- */
 

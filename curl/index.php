@@ -38,7 +38,32 @@ function e(?string $value): string
     return htmlspecialchars((string) $value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
 }
 
-$assetVersion = '3.3';
+/**
+ * Jumlah kolom kartu pada mode TV. Satu-satunya tempat angka ini ditulis;
+ * ganti ke 3 atau 5 kalau kartunya mau lebih besar atau lebih rapat.
+ */
+$tvCols = 4;
+
+/**
+ * Tinggi baris papan untuk mode TV.
+ *
+ * Mode TV mengunci tinggi halaman ke satu layar, jadi papan tidak boleh
+ * memakai tinggi sesuai isi. Semua kartu harus setinggi persis sama meski
+ * grupnya berbeda jumlah, dan itu hanya bisa dipastikan kalau baris judul
+ * grup ('auto') dipisahkan dari baris kartu ('1fr') di template grid.
+ * Dihitung dari config, sehingga menambah layanan tidak perlu menyentuh CSS.
+ */
+$rowTracks = [];
+foreach ($byGroup as $services) {
+    $rowTracks[] = 'auto';
+    $rows = (int) ceil(count($services) / $tvCols);
+    for ($i = 0; $i < max(1, $rows); $i++) {
+        $rowTracks[] = '1fr';
+    }
+}
+$tvRows = implode(' ', $rowTracks);
+
+$assetVersion = '4.0';
 
 ?>
 <!DOCTYPE html>
@@ -49,6 +74,28 @@ $assetVersion = '3.3';
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="color-scheme" content="dark">
     <title><?= e($config['title']) ?><?= $config['subtitle'] !== '' ? ' · ' . e($config['subtitle']) : '' ?></title>
+
+    <!-- Pemilihan mode tampilan. Dijalankan di <head>, sebelum halaman dilukis,
+         supaya tidak ada kedip dari layout laptop ke layout TV.
+
+         Deteksi memakai tinggi viewport, bukan lebar dalam piksel perangkat:
+         TV 4K di Windows dengan scaling 150% melaporkan lebar CSS 2560px, bukan
+         3840px, jadi ambang berbasis "3840" justru tidak pernah kena.
+         ?tv=1 memaksa mode TV (untuk dites dari laptop), ?tv=0 memaksa mode biasa. -->
+    <script>
+        (function () {
+            var paksa = null;
+            var cocok = /[?&]tv=([01])/.exec(window.location.search);
+            if (cocok) {
+                paksa = cocok[1] === '1';
+            }
+            var tv = paksa !== null
+                ? paksa
+                : (window.innerWidth >= 1600 && window.innerHeight >= 800);
+            document.documentElement.setAttribute('data-mode', tv ? 'tv' : 'desk');
+        }());
+    </script>
+
     <link rel="stylesheet" href="assets/app.css?v=<?= e($assetVersion) ?>">
 </head>
 
@@ -95,16 +142,25 @@ copy curl\config.example.php curl\config.php</pre>
             </div>
         </div>
 
+        <!-- Jam sengaja berada di luar .controls: mode TV menyembunyikan kontrol,
+             dan jam "Diperbarui" justru penanda paling penting di sana -- ia yang
+             memberi tahu apakah angka di layar masih segar atau sudah membeku. -->
+        <p class="freshness">
+            <span class="freshness__time" id="cycleNote">--:--:--</span>
+            <span class="freshness__label">Diperbarui</span>
+        </p>
+
         <div class="controls">
-            <p class="freshness">
-                <span class="freshness__time" id="cycleNote">--:--:--</span>
-                <span class="freshness__label">Diperbarui</span>
-            </p>
             <button type="button" class="btn" id="refreshBtn">
                 Cek sekarang
                 <span class="btn__countdown" id="countdown"></span>
             </button>
-            <button type="button" class="btn btn--toggle" id="alarmBtn" aria-pressed="false">
+            <!-- Di mode TV tombol ini menyusut jadi ikon saja; yang mengubah
+                 statusnya di sana adalah tombol "A" pada keyboard, karena
+                 kebijakan autoplay browser tetap menuntut satu gestur pengguna
+                 sebelum alarm boleh berbunyi. -->
+            <button type="button" class="btn btn--toggle" id="alarmBtn" aria-pressed="false"
+                    title="Alarm saat layanan terputus (tombol A)">
                 <span class="btn__icon" aria-hidden="true">🔔</span>
                 <span id="alarmLabel">Alarm mati</span>
             </button>
@@ -119,17 +175,27 @@ copy curl\config.example.php curl\config.php</pre>
         </div>
     </noscript>
 
-    <!-- Baris keadaan: satu baris tenang saat semua normal, membesar menjadi
-         daftar gangguan begitu ada yang bermasalah. -->
-    <section class="state" id="state" data-state="pending" aria-live="polite">
-        <p class="state__head">
-            <span class="state__dot" aria-hidden="true"></span>
-            <span class="state__text" id="stateText">Memeriksa layanan…</span>
-        </p>
-        <ul class="state__list" id="stateList"></ul>
+    <!-- Baris keadaan: tingginya tetap, apa pun jumlah gangguannya. Saat semua
+         normal ia satu baris diam; begitu ada yang bermasalah, isinya berjalan
+         kanan-ke-kiri supaya semua gangguan kebaca bergantian tanpa pernah
+         menambah tinggi halaman. Tinggi yang berubah-ubah adalah hal yang
+         merusak layout satu-layar, justru pada saat kartu paling perlu terlihat.
+
+         Dua segmen dengan isi identik: animasi menggeser separuh lebar,
+         sehingga segmen kedua persis menggantikan yang pertama dan putarannya
+         tidak pernah menyisakan ruang kosong. -->
+    <section class="ticker" id="ticker" data-state="pending" aria-live="polite">
+        <span class="ticker__dot" aria-hidden="true"></span>
+        <div class="ticker__viewport">
+            <div class="ticker__run" id="tickerRun">
+                <span class="ticker__seg" id="tickerSeg">Memeriksa layanan…</span>
+                <span class="ticker__seg" id="tickerSegClone" aria-hidden="true"></span>
+            </div>
+        </div>
     </section>
 
     <main class="board" id="board"
+          style="--cols: <?= (int) $tvCols ?>; grid-template-rows: <?= e($tvRows) ?>;"
           data-refresh="<?= (int) $config['refresh_interval'] ?>"
           data-good="<?= (int) $config['threshold_good'] ?>"
           data-slow="<?= (int) $config['threshold_slow'] ?>">

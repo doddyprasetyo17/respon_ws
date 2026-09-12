@@ -10,8 +10,9 @@
  * dibutuhkan saat internet rumah sakit putus, jadi ia tidak boleh ikut rusak.
  *
  * Kerapatan diatur lewat token di :root dan ditimpa per lebar layar, sehingga
- * satu halaman punya dua karakter: lega dan terbaca dari seberang ruangan di
- * monitor besar, rapat dan detail di laptop.
+ * satu halaman punya tiga karakter: rapat dan detail di laptop, lega di monitor
+ * besar, dan -- di mode TV (blok terakhir file ini) -- terkunci ke satu layar
+ * tanpa gulir, dengan semua ukuran dihitung dari tinggi layar.
  */
 
 :root {
@@ -47,6 +48,15 @@
     --trace-h: 34px;
     --strip-h: 10px;
     --accent-w: 2px;
+    --ticker-h: 36px;
+    --ticker-size: 12px;
+    --title-size: 17px;
+    --sub-size: 12px;
+    --clock-size: 15px;
+    --vital-size: 26px;
+    --unit-size: 11px;
+    /* Keterangan kecil: label vital, nama grup, ketersediaan, meta kartu. */
+    --micro-size: 10px;
 }
 
 /* Monitor besar di ruang IT: semua diperbesar, dibaca dari beberapa meter. */
@@ -61,6 +71,8 @@
         --trace-h: 44px;
         --strip-h: 13px;
         --accent-w: 3px;
+        --ticker-h: 42px;
+        --ticker-size: 13px;
     }
 }
 
@@ -126,7 +138,7 @@ body {
 
 .topbar__title {
     margin: 0;
-    font-size: 17px;
+    font-size: var(--title-size);
     font-weight: 600;
     letter-spacing: 0.16em;
     text-transform: uppercase;
@@ -134,7 +146,7 @@ body {
 
 .topbar__subtitle {
     margin: 2px 0 0;
-    font-size: 12px;
+    font-size: var(--sub-size);
     letter-spacing: 0.1em;
     text-transform: uppercase;
     color: var(--muted);
@@ -164,7 +176,7 @@ body {
 
 .vital__count {
     font-family: var(--font-mono);
-    font-size: 26px;
+    font-size: var(--vital-size);
     font-weight: 600;
     line-height: 1.1;
     font-variant-numeric: tabular-nums;
@@ -178,7 +190,7 @@ body {
 }
 
 .vital__label {
-    font-size: 10px;
+    font-size: var(--micro-size);
     letter-spacing: 0.14em;
     text-transform: uppercase;
     color: var(--muted);
@@ -208,13 +220,13 @@ body {
 
 .freshness__time {
     font-family: var(--font-mono);
-    font-size: 15px;
+    font-size: var(--clock-size);
     font-variant-numeric: tabular-nums;
     color: var(--text);
 }
 
 .freshness__label {
-    font-size: 10px;
+    font-size: var(--micro-size);
     letter-spacing: 0.1em;
     text-transform: uppercase;
     color: var(--muted);
@@ -299,39 +311,33 @@ body {
     border-top: 1px solid var(--down);
 }
 
-/* ---------- Baris keadaan ---------- */
+/* ---------- Baris keadaan: ticker berjalan ---------- */
 
-.state {
+/* Tingginya tetap, apa pun jumlah gangguannya. Versi sebelumnya memanjang jadi
+   daftar dan mendorong kartu keluar layar tepat saat kartu paling perlu
+   dilihat; sekarang isinya berjalan di dalam satu baris. */
+.ticker {
     --tone: var(--unset);
-    padding: 12px var(--pad-x);
-    border-bottom: 1px solid var(--line-soft);
-}
-
-.state[data-state="ok"] {
-    --tone: var(--good);
-}
-
-/* Saat ada gangguan, baris ini berubah dari keterangan tenang menjadi daftar
-   kerja: apa yang rusak, sejak kapan, dan seberapa sering. */
-.state[data-state="problem"] {
-    --tone: var(--down);
-    background: linear-gradient(180deg, rgba(255, 66, 87, 0.09), transparent);
-    border-bottom-color: rgba(255, 66, 87, 0.32);
-}
-
-.state__head {
     display: flex;
     align-items: center;
     gap: 10px;
-    margin: 0;
-    font-size: 11px;
-    font-weight: 600;
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
-    color: var(--tone);
+    height: var(--ticker-h);
+    padding: 0 var(--pad-x);
+    border-bottom: 1px solid var(--line-soft);
+    overflow: hidden;
 }
 
-.state__dot {
+.ticker[data-state="ok"] {
+    --tone: var(--good);
+}
+
+.ticker[data-state="problem"] {
+    --tone: var(--down);
+    background: linear-gradient(180deg, rgba(255, 66, 87, 0.1), transparent);
+    border-bottom-color: rgba(255, 66, 87, 0.32);
+}
+
+.ticker__dot {
     flex: none;
     width: 8px;
     height: 8px;
@@ -339,56 +345,77 @@ body {
     background: var(--tone);
 }
 
-.state[data-state="problem"] .state__dot {
+.ticker[data-state="problem"] .ticker__dot {
     animation: pulse 1.1s ease-in-out infinite;
 }
 
-.state__list {
-    display: grid;
-    gap: 7px;
-    margin: 11px 0 2px;
-    padding: 0;
-    list-style: none;
+.ticker__viewport {
+    flex: 1;
+    /* Tanpa ini viewport melebar mengikuti isi dan tidak ada yang terpotong --
+       artinya tidak ada yang berjalan. */
+    min-width: 0;
+    overflow: hidden;
 }
 
-/* Daftar hanya ada isinya saat bermasalah; sembunyikan supaya keadaan normal
-   tetap satu baris tenang. */
-.state[data-state="ok"] .state__list,
-.state[data-state="pending"] .state__list {
-    display: none;
-}
-
-.state__item {
-    --tone: var(--down);
+.ticker__run {
     display: flex;
-    flex-wrap: wrap;
-    align-items: baseline;
-    gap: 6px 14px;
-    padding-left: 18px;
-    font-size: 12px;
+    width: max-content;
 }
 
-.state__item[data-status="error"] { --tone: var(--error); }
-.state__item[data-status="slow"] { --tone: var(--slow); }
+/* Hanya berjalan saat ada yang salah DAN isinya memang tidak muat. Gerakan di
+   layar yang dipandangi sepanjang hari harus berarti sesuatu; menggeser teks
+   yang sebetulnya sudah terbaca seluruhnya hanya membuatnya lebih sulit
+   dibaca. data-run diisi app.js setelah mengukur isi terhadap lebar viewport. */
+.ticker[data-state="problem"][data-run="true"] .ticker__run {
+    animation: marquee var(--ticker-speed, 30s) linear infinite;
+    will-change: transform;
+}
 
-.state__name {
-    min-width: 170px;
+/* Dua segmen identik, digeser separuh lebar: segmen kedua mengambil alih persis
+   di tempat yang pertama, jadi putarannya tanpa jeda kosong. */
+@keyframes marquee {
+    from { transform: translateX(0); }
+    to { transform: translateX(-50%); }
+}
+
+.ticker__seg {
+    /* Jarak antar putaran, supaya gangguan terakhir dan yang pertama tidak
+       menyatu jadi satu kalimat. */
+    padding-right: 5vw;
+    white-space: nowrap;
+    font-size: var(--ticker-size);
+    letter-spacing: 0.02em;
+}
+
+.ticker__head {
+    font-weight: 600;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--tone);
+}
+
+.ticker__item {
+    --tone: var(--down);
+    margin-left: 2.2em;
+}
+
+.ticker__item[data-status="error"] { --tone: var(--error); }
+.ticker__item[data-status="slow"] { --tone: var(--slow); }
+
+.ticker__name {
     font-weight: 600;
     color: var(--text);
 }
 
-.state__what {
+.ticker__what {
+    margin-left: 0.5em;
     color: var(--tone);
     font-weight: 600;
 }
 
-.state__meta {
+.ticker__meta {
+    margin-left: 0.5em;
     color: var(--muted);
-}
-
-.state__item--more {
-    color: var(--muted);
-    font-style: italic;
 }
 
 /* ---------- Papan & grup ---------- */
@@ -406,7 +433,7 @@ body {
     align-items: center;
     gap: 10px;
     margin: 0 0 12px;
-    font-size: 10px;
+    font-size: var(--micro-size);
     font-weight: 600;
     letter-spacing: 0.2em;
     text-transform: uppercase;
@@ -498,7 +525,7 @@ body {
 .card__avail {
     flex: none;
     font-family: var(--font-mono);
-    font-size: 10px;
+    font-size: var(--micro-size);
     font-variant-numeric: tabular-nums;
     color: var(--muted);
 }
@@ -530,7 +557,7 @@ body {
 }
 
 .card__unit {
-    font-size: 11px;
+    font-size: var(--unit-size);
     color: var(--muted);
 }
 
@@ -624,7 +651,7 @@ body {
     justify-content: space-between;
     gap: 8px;
     margin: auto 0 0;
-    font-size: 10px;
+    font-size: var(--micro-size);
     letter-spacing: 0.08em;
     text-transform: uppercase;
 }
@@ -709,6 +736,8 @@ body {
         --pad-x: 16px;
         --card-min: 150px;
         --value-size: 25px;
+        --ticker-h: 32px;
+        --ticker-size: 11px;
     }
 
     .topbar {
@@ -725,17 +754,225 @@ body {
         gap: 12px;
     }
 
-    .controls {
+    .freshness {
         order: 3;
-        width: 100%;
+        align-items: flex-start;
+    }
+
+    .controls {
+        order: 4;
+        flex: 1;
         flex-wrap: wrap;
         justify-content: flex-end;
     }
+}
 
-    .state__name {
-        min-width: 0;
-        width: 100%;
-    }
+/* ================================================================
+   Mode TV: satu layar, tanpa gulir
+   ================================================================
+
+   Dinyalakan oleh skrip kecil di <head> index.php lewat data-mode="tv" pada
+   <html>, bukan oleh media query. Alasannya satu: mode ini juga harus bisa
+   dipaksa dari URL (?tv=1) untuk dites dari laptop, dan menggantungkan tiap
+   aturan pada "media query ATAU class" berarti menulis setiap selector dua
+   kali. Satu atribut, satu sumber kebenaran.
+
+   Semua ukuran di sini pakai satuan vh, bukan px. Yang dibagi-bagi adalah
+   tinggi layar, dan tinggi layar itulah satu-satunya anggaran yang tidak
+   boleh dilewati kalau halaman tidak boleh digulir. Efek sampingnya yang
+   paling berguna: satu set angka ini benar di 4K maupun 2K tanpa diubah.
+   Ambang deteksi juga sengaja tidak berbasis "3840px" -- TV 4K di Windows
+   dengan scaling 150% melaporkan lebar CSS 2560px, jadi ambang sebesar itu
+   justru tidak pernah kena. */
+
+:root[data-mode="tv"] {
+    --gap: 1.05vh;
+    --pad-x: clamp(18px, 1.4vw, 56px);
+    --card-pad: 1.3vh 1.5vh 1.1vh;
+    --value-size: 3.5vh;
+    --name-size: 1.4vh;
+    --strip-h: 1.2vh;
+    --accent-w: 0.35vh;
+    --ticker-h: 3.6vh;
+    --ticker-size: 1.55vh;
+    --title-size: 2.1vh;
+    --sub-size: 1.35vh;
+    --clock-size: 2vh;
+    --vital-size: 3.2vh;
+    --unit-size: 1.35vh;
+    --micro-size: 1.2vh;
+}
+
+:root[data-mode="tv"] body {
+    height: 100vh;
+    height: 100dvh;
+    min-height: 0;
+    /* Kunci terakhir: apa pun yang terjadi pada isi, halaman tidak menggulir.
+       Karena itu setiap elemen di bawah wajib punya tinggi yang jelas atau
+       min-height: 0 -- kalau tidak, yang meluber akan terpotong diam-diam. */
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    font-size: 1.55vh;
+}
+
+:root[data-mode="tv"] .sweep {
+    height: 0.35vh;
+}
+
+:root[data-mode="tv"] .topbar {
+    position: static;
+    flex: none;
+    flex-wrap: nowrap;
+    gap: 2vh;
+    padding: 1.2vh var(--pad-x) 1.1vh;
+    /* Tidak ada yang bergulir di belakangnya, jadi blur hanya membuang GPU
+       pada mini-PC yang biasanya menyetir layar ini. */
+    backdrop-filter: none;
+    background: none;
+}
+
+:root[data-mode="tv"] .vitals {
+    gap: 2.4vh;
+}
+
+:root[data-mode="tv"] .vital {
+    min-width: 5.5vh;
+    padding-left: 1.1vh;
+}
+
+:root[data-mode="tv"] .freshness {
+    /* ch, bukan px: lebarnya harus ikut membesar bersama fontnya, supaya jam
+       yang berdetak tetap tidak menggeser apa pun. */
+    min-width: 9ch;
+}
+
+/* TV tidak punya mouse, jadi tombol "Cek sekarang" hanya memakan ruang --
+   siklus otomatis tetap berjalan tanpanya. */
+:root[data-mode="tv"] #refreshBtn,
+:root[data-mode="tv"] .footer {
+    display: none;
+}
+
+/* Alarm menyusut jadi lampu indikator. Ia tidak dibuang karena kebijakan
+   autoplay browser menuntut satu gestur pengguna sebelum suara boleh keluar:
+   di TV gestur itu adalah tombol "A" pada keyboard, dan ikon ini satu-satunya
+   yang memberi tahu apakah alarm sudah benar-benar hidup. */
+:root[data-mode="tv"] .btn--toggle {
+    padding: 0;
+    border: 0;
+    background: none;
+}
+
+:root[data-mode="tv"] .btn--toggle:hover {
+    background: none;
+    border-color: transparent;
+}
+
+:root[data-mode="tv"] #alarmLabel {
+    display: none;
+}
+
+:root[data-mode="tv"] .btn__icon {
+    font-size: 2.3vh;
+}
+
+:root[data-mode="tv"] .ticker {
+    flex: none;
+}
+
+:root[data-mode="tv"] .ticker__dot {
+    width: 1.1vh;
+    height: 1.1vh;
+}
+
+/* Banner hanya muncul kalau server pemantaunya sendiri tak terjangkau. Di mode
+   ini ia mengapung di atas papan, tidak mendorongnya: blok yang muncul-hilang
+   di dalam alur akan menggeser seluruh kartu tiap kali jaringan tersendat.
+   Latarnya dibuat pekat karena ia menumpuk di atas kartu. */
+:root[data-mode="tv"] .banner {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 30;
+    padding: 1.1vh var(--pad-x);
+    background: #2a0a10;
+    border-top: 1px solid var(--down);
+    border-bottom: 0;
+    font-size: 1.5vh;
+}
+
+/* ---------- Papan: grid satu layar ---------- */
+
+:root[data-mode="tv"] .board {
+    flex: 1;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: repeat(var(--cols, 4), minmax(0, 1fr));
+    /* grid-template-rows datang dari index.php: satu 'auto' untuk tiap judul
+       grup, satu '1fr' untuk tiap baris kartu. */
+    gap: var(--gap);
+    padding: var(--gap) var(--pad-x);
+    overflow: hidden;
+}
+
+/* Judul grup dan kartu-kartunya harus menjadi item papan langsung, bukan isi
+   dari kotak sendiri-sendiri. Itu satu-satunya cara membuat SEMUA kartu
+   setinggi persis sama: baris judul ('auto') dan baris kartu ('1fr') dibagi
+   oleh satu template yang sama, bukan oleh tiap grup secara terpisah. Kalau
+   tiap grup membagi tinggi sendiri, grup berisi 2 layanan akan punya kartu
+   dua kali lebih tinggi daripada grup berisi 8. */
+:root[data-mode="tv"] .group,
+:root[data-mode="tv"] .grid {
+    display: contents;
+}
+
+:root[data-mode="tv"] .group__name {
+    grid-column: 1 / -1;
+    align-self: center;
+    margin: 0;
+}
+
+/* Di laptop hitungan ini duduk di ujung kanan baris judul. Selebar TV, ujung
+   kanan itu dua meter dari nama grupnya dan angkanya jadi tidak jelas milik
+   siapa -- jadi di sini ia menempel pada namanya. */
+:root[data-mode="tv"] .group__count {
+    order: 0;
+}
+
+:root[data-mode="tv"] .card {
+    min-height: 0;
+    overflow: hidden;
+}
+
+:root[data-mode="tv"] .card__head {
+    min-height: 0;
+    gap: 1vh;
+}
+
+:root[data-mode="tv"] .dot {
+    width: 1vh;
+    height: 1vh;
+    margin-top: 0.6vh;
+}
+
+:root[data-mode="tv"] .card__reading {
+    margin: 0.5vh 0 0;
+}
+
+/* Trace menyerap sisa tinggi kartu. Tinggi kartu di sini ditentukan grid, bukan
+   isinya, jadi harus ada satu bagian yang memuai -- dan gelombang latency-lah
+   yang paling pantas mendapat ruang itu. */
+:root[data-mode="tv"] .trace {
+    flex: 1 1 auto;
+    height: auto;
+    min-height: 2vh;
+    margin: 0.6vh 0 0;
+}
+
+:root[data-mode="tv"] .strip {
+    margin: 0.9vh 0 0.8vh;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -743,5 +980,22 @@ body {
         animation-duration: 0.001ms !important;
         animation-iteration-count: 1 !important;
         transition-duration: 0.001ms !important;
+    }
+
+    /* Tanpa animasi, ticker tidak bisa mengandalkan gerak untuk menampilkan
+       sisa isinya. Jadikan satu baris terpotong yang jujur, bukan teks yang
+       menghilang di luar viewport. */
+    .ticker__run {
+        width: 100%;
+    }
+
+    .ticker__seg {
+        overflow: hidden;
+        padding-right: 0;
+        text-overflow: ellipsis;
+    }
+
+    #tickerSegClone {
+        display: none;
     }
 }
