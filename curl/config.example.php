@@ -46,6 +46,14 @@ return [
     // waktu hingga dua kali timeout.
     'retry_failed' => true,
 
+    // Riwayat pengecekan disimpan di curl/data/history.json.
+    // history_limit = jumlah siklus yang disimpan; pada refresh 30 detik,
+    // 240 siklus kira-kira 2 jam terakhir. strip_length = berapa banyak
+    // pengecekan yang digambar pada strip riwayat tiap kartu.
+    'history_enabled' => true,
+    'history_limit'   => 240,
+    'strip_length'    => 60,
+
     // Nyalakan hanya saat menelusuri masalah. Saat true, pesan error PHP
     // ikut tampil di halaman dan di respons API.
     'debug' => false,

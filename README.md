@@ -37,6 +37,9 @@ Isi yang paling sering diubah ada di `curl/config.php`:
 | `threshold_good` | Di bawah nilai ini (ms) status dianggap bagus. |
 | `threshold_slow` | Di atas nilai ini (ms) status jadi "sangat lambat". |
 | `retry_failed` | Ulangi sekali target yang gagal, supaya gangguan sesaat tidak membunyikan alarm. |
+| `history_enabled` | Simpan riwayat pengecekan ke `curl/data/history.json`. |
+| `history_limit` | Jumlah siklus yang disimpan. Pada refresh 30 detik, 240 siklus ≈ 2 jam. |
+| `strip_length` | Berapa banyak pengecekan yang digambar pada strip riwayat tiap kartu. |
 | `debug` | Tampilkan pesan error PHP. Biarkan `false` saat dipakai sehari-hari. |
 
 Menambah layanan cukup menambah satu baris di `groups`:
@@ -70,3 +73,35 @@ internal), pakai bentuk panjang di config:
 Waktu yang ditampilkan adalah **waktu sampai byte pertama (TTFB)**, bukan waktu
 unduh seluruh halaman, supaya angkanya mencerminkan kondisi jaringan dan bukan
 besar halaman yang kebetulan diminta.
+
+## Yang ditampilkan di layar
+
+Baris paling atas adalah ringkasan keadaan. Saat semua normal ia hanya satu
+baris tenang; begitu ada gangguan ia berubah menjadi daftar kerja berisi apa
+yang rusak, sejak kapan, dan berapa kali terganggu belakangan ini.
+
+Tiap kartu layanan berisi:
+
+- **Angka besar** — waktu balas pengecekan terakhir.
+- **Grafik** — pergerakan waktu balas. Garis putus-putus muncul di posisi
+  ambang `threshold_good`, tapi hanya kalau memang ada nilai yang pernah
+  mendekatinya; kalau tidak, garis itu cuma jadi hiasan.
+- **Strip** — satu balok untuk tiap pengecekan, warnanya mengikuti status.
+  Di sinilah layanan yang “kedip-kedip” langsung ketahuan, yang tidak
+  terlihat dari angka sesaat maupun dari grafik.
+- **Persentase** — ketersediaan selama rentang riwayat. Sengaja hanya muncul
+  kalau di bawah 100%, supaya yang bermasalah tidak tenggelam di antara
+  belasan angka yang sama.
+
+Arahkan kursor ke kartu untuk melihat keterangan lengkap: waktu connect,
+nilai lazim layanan itu, jumlah gangguan, dan jumlah pengecekan.
+
+Tata letak menyesuaikan lebar layar: di monitor besar ruang IT angka dan
+kartu membesar supaya terbaca dari jauh, di laptop informasinya dirapatkan.
+
+### Soal angka ketersediaan
+
+Pengecekan hanya berjalan selama ada browser yang membuka dashboard ini.
+Jadi persentasenya berarti “dari pengecekan yang sempat dilakukan”, bukan
+uptime 24 jam. Kalau dashboard ditutup semalaman, malam itu tidak terhitung.
+Untuk pemantauan menerus, biarkan satu layar membukanya sepanjang waktu.

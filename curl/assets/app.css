@@ -1,13 +1,17 @@
 /*
  * Respon WS -- tampilan dashboard.
  *
- * Bahasa visualnya sengaja meminjam layar monitor pasien: dasar petrol gelap,
- * empat warna status yang naik bertingkat seperti lampu vital sign, angka
- * monospace tabular supaya digit tidak bergeser tiap refresh, dan satu trace
- * per layanan yang menjadi flatline begitu layanan berhenti menjawab.
+ * Bahasa visualnya meminjam layar monitor pasien: dasar petrol gelap, empat
+ * warna status yang naik bertingkat seperti lampu vital sign, angka monospace
+ * tabular supaya digit tidak bergeser tiap refresh, dan satu trace per layanan
+ * yang menjadi flatline begitu layanan berhenti menjawab.
  *
  * Tidak ada font atau stylesheet dari CDN. Dashboard ini justru paling
  * dibutuhkan saat internet rumah sakit putus, jadi ia tidak boleh ikut rusak.
+ *
+ * Kerapatan diatur lewat token di :root dan ditimpa per lebar layar, sehingga
+ * satu halaman punya dua karakter: lega dan terbaca dari seberang ruangan di
+ * monitor besar, rapat dan detail di laptop.
  */
 
 :root {
@@ -31,8 +35,33 @@
     --font-ui: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
     --font-mono: ui-monospace, "Cascadia Mono", "Cascadia Code", Consolas, "SF Mono", Menlo, monospace;
 
-    --gap: 14px;
     --radius: 3px;
+
+    /* Kerapatan dasar: dibuka di laptop, dilihat dari jarak dekat. */
+    --gap: 14px;
+    --pad-x: 24px;
+    --card-min: 206px;
+    --card-pad: 13px 14px 11px;
+    --value-size: 30px;
+    --name-size: 11px;
+    --trace-h: 34px;
+    --strip-h: 10px;
+    --accent-w: 2px;
+}
+
+/* Monitor besar di ruang IT: semua diperbesar, dibaca dari beberapa meter. */
+@media (min-width: 1500px) {
+    :root {
+        --gap: 16px;
+        --pad-x: 32px;
+        --card-min: 252px;
+        --card-pad: 16px 18px 14px;
+        --value-size: 40px;
+        --name-size: 12px;
+        --trace-h: 44px;
+        --strip-h: 13px;
+        --accent-w: 3px;
+    }
 }
 
 * {
@@ -89,7 +118,7 @@ body {
     align-items: center;
     justify-content: space-between;
     gap: 16px 24px;
-    padding: 18px 24px 16px;
+    padding: 18px var(--pad-x) 16px;
     background: rgba(8, 19, 26, 0.92);
     backdrop-filter: blur(8px);
     border-bottom: 1px solid var(--line);
@@ -259,7 +288,7 @@ body {
 
 .banner {
     margin: 0;
-    padding: 11px 24px;
+    padding: 11px var(--pad-x);
     background: rgba(255, 66, 87, 0.12);
     border-bottom: 1px solid var(--down);
     color: #ffd2d8;
@@ -270,14 +299,106 @@ body {
     border-top: 1px solid var(--down);
 }
 
+/* ---------- Baris keadaan ---------- */
+
+.state {
+    --tone: var(--unset);
+    padding: 12px var(--pad-x);
+    border-bottom: 1px solid var(--line-soft);
+}
+
+.state[data-state="ok"] {
+    --tone: var(--good);
+}
+
+/* Saat ada gangguan, baris ini berubah dari keterangan tenang menjadi daftar
+   kerja: apa yang rusak, sejak kapan, dan seberapa sering. */
+.state[data-state="problem"] {
+    --tone: var(--down);
+    background: linear-gradient(180deg, rgba(255, 66, 87, 0.09), transparent);
+    border-bottom-color: rgba(255, 66, 87, 0.32);
+}
+
+.state__head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 0;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--tone);
+}
+
+.state__dot {
+    flex: none;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--tone);
+}
+
+.state[data-state="problem"] .state__dot {
+    animation: pulse 1.1s ease-in-out infinite;
+}
+
+.state__list {
+    display: grid;
+    gap: 7px;
+    margin: 11px 0 2px;
+    padding: 0;
+    list-style: none;
+}
+
+/* Daftar hanya ada isinya saat bermasalah; sembunyikan supaya keadaan normal
+   tetap satu baris tenang. */
+.state[data-state="ok"] .state__list,
+.state[data-state="pending"] .state__list {
+    display: none;
+}
+
+.state__item {
+    --tone: var(--down);
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 6px 14px;
+    padding-left: 18px;
+    font-size: 12px;
+}
+
+.state__item[data-status="error"] { --tone: var(--error); }
+.state__item[data-status="slow"] { --tone: var(--slow); }
+
+.state__name {
+    min-width: 170px;
+    font-weight: 600;
+    color: var(--text);
+}
+
+.state__what {
+    color: var(--tone);
+    font-weight: 600;
+}
+
+.state__meta {
+    color: var(--muted);
+}
+
+.state__item--more {
+    color: var(--muted);
+    font-style: italic;
+}
+
 /* ---------- Papan & grup ---------- */
 
 .board {
-    padding: 26px 24px 40px;
+    padding: 24px var(--pad-x) 40px;
 }
 
 .group + .group {
-    margin-top: 30px;
+    margin-top: 28px;
 }
 
 .group__name {
@@ -307,7 +428,7 @@ body {
 
 .grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(196px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(var(--card-min), 1fr));
     gap: var(--gap);
 }
 
@@ -315,13 +436,12 @@ body {
 
 .card {
     --accent: var(--unset);
-    position: relative;
     display: flex;
     flex-direction: column;
-    padding: 13px 14px 11px;
+    padding: var(--card-pad);
     background: var(--panel);
     border: 1px solid var(--line-soft);
-    border-left: 2px solid var(--accent);
+    border-left: var(--accent-w) solid var(--accent);
     border-radius: var(--radius);
     transition: border-color 0.25s ease, background 0.25s ease;
 }
@@ -338,15 +458,16 @@ body {
 
 .card__head {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     gap: 8px;
-    min-height: 32px;
+    min-height: 30px;
 }
 
 .dot {
     flex: none;
     width: 7px;
     height: 7px;
+    margin-top: 5px;
     border-radius: 50%;
     background: var(--accent);
 }
@@ -363,13 +484,27 @@ body {
 }
 
 .card__name {
+    flex: 1;
     margin: 0;
-    font-size: 11px;
+    font-size: var(--name-size);
     font-weight: 600;
     letter-spacing: 0.08em;
     text-transform: uppercase;
     color: var(--text-dim);
 }
+
+/* Ketersediaan dalam rentang riwayat. Sengaja kecil dan redup: yang dicari
+   pertama adalah status sekarang, angka ini konteks pendukung. */
+.card__avail {
+    flex: none;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-variant-numeric: tabular-nums;
+    color: var(--muted);
+}
+
+.card__avail[data-tone="warn"] { color: var(--slow); }
+.card__avail[data-tone="bad"] { color: var(--down); }
 
 .card__reading {
     display: flex;
@@ -380,7 +515,7 @@ body {
 
 .card__value {
     font-family: var(--font-mono);
-    font-size: 30px;
+    font-size: var(--value-size);
     font-weight: 500;
     line-height: 1;
     /* Tabular: angka berganti tiap siklus, lebarnya harus tetap. */
@@ -399,14 +534,27 @@ body {
     color: var(--muted);
 }
 
-/* ---------- Trace ---------- */
+/* ---------- Trace latency ---------- */
 
 .trace {
     display: block;
     width: 100%;
-    height: 34px;
-    margin: 4px 0 8px;
+    height: var(--trace-h);
+    margin: 4px 0 0;
     overflow: visible;
+}
+
+/* Isian tipis di bawah garis. Pada kartu sekecil ini garis telanjang terbaca
+   seperti derau; isian memberi garis itu dasar untuk dibaca. */
+.trace__area {
+    fill: var(--accent);
+    stroke: none;
+    opacity: 0.11;
+}
+
+.card[data-status="pending"] .trace__area,
+.card[data-status="unset"] .trace__area {
+    opacity: 0;
 }
 
 .trace__line {
@@ -419,15 +567,55 @@ body {
     opacity: 0.9;
 }
 
+/* Garis ambang hanya digambar kalau ada nilai yang benar-benar mendekatinya,
+   supaya tidak jadi hiasan yang selalu menempel di dasar grafik. */
+.trace__threshold {
+    stroke: var(--muted);
+    stroke-width: 1;
+    stroke-dasharray: 3 4;
+    vector-effect: non-scaling-stroke;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
 .card[data-status="pending"] .trace__line,
 .card[data-status="unset"] .trace__line {
     opacity: 0.3;
     stroke-dasharray: 3 4;
 }
 
-/* Layanan mati menampilkan garis datar -- sengaja dibaca seperti asistol. */
-.card[data-status="down"] .trace__line {
+/* ---------- Strip riwayat: satu balok per pengecekan ---------- */
+
+.strip {
+    display: flex;
+    gap: 1px;
+    height: var(--strip-h);
+    margin: 7px 0 9px;
+}
+
+.strip__cell {
+    flex: 1 1 0;
+    min-width: 0;
+    border-radius: 1px;
+    background: var(--unset);
     opacity: 0.85;
+}
+
+.strip__cell[data-s="good"] { background: var(--good); }
+.strip__cell[data-s="slow"] { background: var(--slow); }
+.strip__cell[data-s="error"] { background: var(--error); }
+.strip__cell[data-s="down"] { background: var(--down); opacity: 1; }
+.strip__cell[data-s="unset"] { background: var(--line); opacity: 0.6; }
+
+/* Pengecekan paling akhir, di ujung kanan. */
+.strip__cell:last-child {
+    opacity: 1;
+}
+
+.strip--empty {
+    background: repeating-linear-gradient(90deg,
+        var(--line-soft) 0 3px, transparent 3px 7px);
+    border-radius: 1px;
 }
 
 .card__meta {
@@ -464,7 +652,7 @@ body {
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
-    padding: 14px 24px 26px;
+    padding: 14px var(--pad-x) 26px;
     border-top: 1px solid var(--line-soft);
     color: var(--muted);
     font-size: 11px;
@@ -514,11 +702,17 @@ body {
     font-size: 13px;
 }
 
-/* ---------- Responsif ---------- */
+/* ---------- Layar sempit ---------- */
 
 @media (max-width: 720px) {
+    :root {
+        --pad-x: 16px;
+        --card-min: 150px;
+        --value-size: 25px;
+    }
+
     .topbar {
-        padding: 14px 16px;
+        padding: 14px var(--pad-x);
         gap: 14px;
     }
 
@@ -534,26 +728,13 @@ body {
     .controls {
         order: 3;
         width: 100%;
-    }
-
-    .controls {
         flex-wrap: wrap;
         justify-content: flex-end;
     }
 
-    .board,
-    .footer,
-    .banner {
-        padding-left: 16px;
-        padding-right: 16px;
-    }
-
-    .grid {
-        grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-    }
-
-    .card__value {
-        font-size: 25px;
+    .state__name {
+        min-width: 0;
+        width: 100%;
     }
 }
 

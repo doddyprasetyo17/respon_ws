@@ -2,6 +2,9 @@
 # Salin config.example.php -> config.php di tiap server.
 /curl/config.php
 
+# Riwayat pengecekan, khusus per deployment
+/curl/data/
+
 # Catatan kerja Claude Code
 CLAUDE.md
 

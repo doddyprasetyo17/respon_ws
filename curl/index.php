@@ -38,7 +38,7 @@ function e(?string $value): string
     return htmlspecialchars((string) $value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
 }
 
-$assetVersion = '2.3';
+$assetVersion = '3.3';
 
 ?>
 <!DOCTYPE html>
@@ -119,6 +119,16 @@ copy curl\config.example.php curl\config.php</pre>
         </div>
     </noscript>
 
+    <!-- Baris keadaan: satu baris tenang saat semua normal, membesar menjadi
+         daftar gangguan begitu ada yang bermasalah. -->
+    <section class="state" id="state" data-state="pending" aria-live="polite">
+        <p class="state__head">
+            <span class="state__dot" aria-hidden="true"></span>
+            <span class="state__text" id="stateText">Memeriksa layanan…</span>
+        </p>
+        <ul class="state__list" id="stateList"></ul>
+    </section>
+
     <main class="board" id="board"
           data-refresh="<?= (int) $config['refresh_interval'] ?>"
           data-good="<?= (int) $config['threshold_good'] ?>"
@@ -137,6 +147,7 @@ copy curl\config.example.php curl\config.php</pre>
                             <div class="card__head">
                                 <span class="dot" aria-hidden="true"></span>
                                 <h3 class="card__name"><?= e($service['name']) ?></h3>
+                                <span class="card__avail" data-field="avail"></span>
                             </div>
 
                             <p class="card__reading">
@@ -145,8 +156,14 @@ copy curl\config.example.php curl\config.php</pre>
                             </p>
 
                             <svg class="trace" viewBox="0 0 200 40" preserveAspectRatio="none" aria-hidden="true">
+                                <line class="trace__threshold" data-field="threshold"
+                                      x1="0" x2="200" y1="20" y2="20" opacity="0" />
+                                <polygon class="trace__area" data-field="area" points="" />
                                 <polyline class="trace__line" data-field="trace" points="0,20 200,20" />
                             </svg>
+
+                            <div class="strip" data-field="strip" role="img"
+                                 aria-label="Riwayat pengecekan terakhir"></div>
 
                             <p class="card__meta">
                                 <span class="card__label" data-field="label">Menunggu…</span>
@@ -163,6 +180,8 @@ copy curl\config.example.php curl\config.php</pre>
         <span>&copy; <?= date('Y') ?><?= $config['credit'] !== '' ? ' ' . e($config['credit']) : '' ?></span>
         <span class="footer__sep">·</span>
         <span>Latency diukur sampai byte pertama (TTFB)</span>
+        <span class="footer__sep">·</span>
+        <span id="windowNote">–</span>
         <span class="footer__sep">·</span>
         <span id="cycleDuration">–</span>
     </footer>

@@ -1,8 +1,11 @@
 /*
- * Respon WS -- pengambilan data dan penggambaran trace.
+ * Respon WS -- pengambilan data dan penggambaran.
  *
- * Halaman tidak pernah reload sendiri. Kartu sudah dirender server dari
- * config; skrip ini hanya memperbarui isinya dari api.php.
+ * Halaman tidak pernah reload sendiri. Kartu sudah dirender server dari config;
+ * skrip ini hanya memperbarui isinya dari api.php.
+ *
+ * Riwayat datang dari server, bukan dari penyimpanan browser. Penyimpanan lokal
+ * hanya dipakai untuk satu hal: preferensi alarm, yang memang milik tiap layar.
  */
 
 (function () {
@@ -14,47 +17,70 @@
     }
 
     var REFRESH = Math.max(5, parseInt(board.dataset.refresh, 10) || 30);
-    var HISTORY_LIMIT = 24;
-    var HISTORY_KEY = 'responws.history.v1';
+    var THRESHOLD_GOOD = parseInt(board.dataset.good, 10) || 500;
     var ALARM_KEY = 'responws.alarm.v1';
 
     var els = {
         banner: document.getElementById('banner'),
         cycleNote: document.getElementById('cycleNote'),
         cycleDuration: document.getElementById('cycleDuration'),
+        windowNote: document.getElementById('windowNote'),
         countdown: document.getElementById('countdown'),
         refreshBtn: document.getElementById('refreshBtn'),
         alarmBtn: document.getElementById('alarmBtn'),
         alarmLabel: document.getElementById('alarmLabel'),
         sweep: document.getElementById('sweep'),
-        sweepFill: document.getElementById('sweepFill')
+        sweepFill: document.getElementById('sweepFill'),
+        state: document.getElementById('state'),
+        stateText: document.getElementById('stateText'),
+        stateList: document.getElementById('stateList')
     };
 
-    var history = loadHistory();
     var remaining = REFRESH;
     var inFlight = false;
     var anyDown = false;
 
-    /* ---------- Penyimpanan lokal (selalu opsional) ---------- */
+    /* ---------- Format ---------- */
 
-    function loadHistory() {
-        try {
-            var raw = window.localStorage.getItem(HISTORY_KEY);
-            var parsed = raw ? JSON.parse(raw) : null;
-            return (parsed && typeof parsed === 'object') ? parsed : {};
-        } catch (err) {
-            // Mode penyamaran, penyimpanan diblokir, atau data rusak.
-            return {};
+    var LABEL_STATUS = {
+        good: 'Jaringan bagus',
+        slow: 'Lambat',
+        error: 'Error server',
+        down: 'Terputus',
+        unset: 'Belum diset'
+    };
+
+    function jam(epochDetik) {
+        if (!epochDetik) {
+            return '';
         }
+        var d = new Date(epochDetik * 1000);
+        return ('0' + d.getHours()).slice(-2) + ':' +
+            ('0' + d.getMinutes()).slice(-2) + ':' +
+            ('0' + d.getSeconds()).slice(-2);
     }
 
-    function saveHistory() {
-        try {
-            window.localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
-        } catch (err) {
-            /* riwayat hanya pemanis; abaikan kalau tidak bisa disimpan */
+    function durasi(detik) {
+        if (detik < 60) {
+            return Math.max(0, Math.round(detik)) + ' detik';
         }
+        var menit = Math.round(detik / 60);
+        if (menit < 60) {
+            return menit + ' menit';
+        }
+        var jamPenuh = Math.floor(menit / 60);
+        var sisa = menit % 60;
+        return sisa > 0 ? jamPenuh + ' jam ' + sisa + ' menit' : jamPenuh + ' jam';
     }
+
+    function persen(nilai) {
+        if (nilai === null || typeof nilai !== 'number') {
+            return '';
+        }
+        return (nilai >= 100 ? '100' : nilai.toFixed(1)) + '%';
+    }
+
+    /* ---------- Penyimpanan preferensi alarm ---------- */
 
     function loadAlarmPref() {
         try {
@@ -68,51 +94,96 @@
         try {
             window.localStorage.setItem(ALARM_KEY, on ? 'on' : 'off');
         } catch (err) {
-            /* abaikan */
+            /* preferensi saja; abaikan kalau penyimpanan diblokir */
         }
     }
 
-    /* ---------- Trace ---------- */
+    /* ---------- Grafik latency ---------- */
 
     /**
-     * Ubah riwayat latency jadi titik-titik polyline pada viewBox 200x40.
-     * Nilai null (layanan tidak menjawab) digambar rata di tengah, sehingga
-     * layanan mati terbaca sebagai garis datar.
+     * Hitung titik polyline pada viewBox 200x40, plus posisi garis ambang.
+     *
+     * Skala mengikuti nilai terbesar yang benar-benar terjadi, bukan ambang,
+     * supaya variasi kecil tetap terlihat. Konsekuensinya garis ambang hanya
+     * masuk gambar kalau memang pernah ada yang mendekatinya -- dan justru itu
+     * satu-satunya saat garis tersebut berguna.
      */
-    function buildTrace(samples) {
-        var flat = '0,20 200,20';
+    function geometriTrace(samples) {
+        var hasil = { points: '0,20 200,20', thresholdY: null };
+
         if (!samples || samples.length === 0) {
-            return flat;
+            return hasil;
         }
 
         var max = 100;
-        for (var i = 0; i < samples.length; i++) {
+        var i;
+        for (i = 0; i < samples.length; i++) {
             if (typeof samples[i] === 'number' && samples[i] > max) {
                 max = samples[i];
             }
         }
 
-        function y(value) {
-            if (typeof value !== 'number') {
-                return 20;
+        function y(nilai) {
+            if (typeof nilai !== 'number') {
+                return 20; // tidak menjawab -> garis datar di tengah
             }
-            return 37 - Math.min(1, value / max) * 33;
+            return 37 - Math.min(1, nilai / max) * 33;
         }
 
         if (samples.length === 1) {
-            var only = y(samples[0]).toFixed(1);
-            return '0,' + only + ' 200,' + only;
+            var satu = y(samples[0]).toFixed(1);
+            hasil.points = '0,' + satu + ' 200,' + satu;
+        } else {
+            var langkah = 200 / (samples.length - 1);
+            var titik = [];
+            for (i = 0; i < samples.length; i++) {
+                titik.push((i * langkah).toFixed(1) + ',' + y(samples[i]).toFixed(1));
+            }
+            hasil.points = titik.join(' ');
         }
 
-        var step = 200 / (samples.length - 1);
-        var points = [];
-        for (var j = 0; j < samples.length; j++) {
-            points.push((j * step).toFixed(1) + ',' + y(samples[j]).toFixed(1));
+        if (THRESHOLD_GOOD > 0 && THRESHOLD_GOOD <= max) {
+            hasil.thresholdY = y(THRESHOLD_GOOD);
         }
-        return points.join(' ');
+
+        return hasil;
     }
 
-    /* ---------- Render ---------- */
+    /* ---------- Strip riwayat ---------- */
+
+    function renderStrip(container, strip, svc) {
+        if (!container) {
+            return;
+        }
+
+        container.textContent = '';
+
+        if (!strip || strip.length === 0) {
+            container.classList.add('strip--empty');
+            container.setAttribute('aria-label', 'Riwayat belum terkumpul');
+            return;
+        }
+
+        container.classList.remove('strip--empty');
+
+        var frag = document.createDocumentFragment();
+        for (var i = 0; i < strip.length; i++) {
+            var sel = document.createElement('span');
+            sel.className = 'strip__cell';
+            sel.setAttribute('data-s', strip[i].s);
+            sel.title = jam(strip[i].t) + ' — ' + (LABEL_STATUS[strip[i].s] || strip[i].s);
+            frag.appendChild(sel);
+        }
+        container.appendChild(frag);
+
+        container.setAttribute(
+            'aria-label',
+            strip.length + ' pengecekan terakhir, ketersediaan ' +
+            (persen(svc.availability) || 'belum terhitung')
+        );
+    }
+
+    /* ---------- Render kartu ---------- */
 
     function render(data) {
         var services = data.services || [];
@@ -132,29 +203,41 @@
 
             card.dataset.status = svc.status;
 
-            var samples = history[svc.id] || [];
-            samples.push(typeof svc.latency_ms === 'number' ? svc.latency_ms : null);
-            if (samples.length > HISTORY_LIMIT) {
-                samples = samples.slice(-HISTORY_LIMIT);
-            }
-            history[svc.id] = samples;
-
-            setField(card, 'latency', typeof svc.latency_ms === 'number' ? Math.round(svc.latency_ms) : '–––');
+            setField(card, 'latency',
+                typeof svc.latency_ms === 'number' ? Math.round(svc.latency_ms) : '–––');
             setField(card, 'label', svc.label);
             setField(card, 'code', svc.http_code ? String(svc.http_code) : '');
 
-            var trace = card.querySelector('[data-field="trace"]');
-            if (trace) {
-                trace.setAttribute('points', buildTrace(samples));
+            renderAvail(card.querySelector('[data-field="avail"]'), svc);
+
+            var geom = geometriTrace(svc.latencies || []);
+            var garis = card.querySelector('[data-field="trace"]');
+            if (garis) {
+                garis.setAttribute('points', geom.points);
+            }
+            var area = card.querySelector('[data-field="area"]');
+            if (area) {
+                // Garis yang sama, ditutup ke dasar viewBox.
+                area.setAttribute('points', geom.points + ' 200,40 0,40');
+            }
+            var ambang = card.querySelector('[data-field="threshold"]');
+            if (ambang) {
+                if (geom.thresholdY === null) {
+                    ambang.setAttribute('opacity', '0');
+                } else {
+                    ambang.setAttribute('y1', geom.thresholdY.toFixed(1));
+                    ambang.setAttribute('y2', geom.thresholdY.toFixed(1));
+                    ambang.setAttribute('opacity', '1');
+                }
             }
 
-            card.title = svc.name + ' — ' + svc.label +
-                (svc.detail ? ' (' + svc.detail + ')' : '') +
-                (typeof svc.connect_ms === 'number' ? '\nWaktu connect: ' + Math.round(svc.connect_ms) + ' ms' : '');
+            renderStrip(card.querySelector('[data-field="strip"]'), svc.strip, svc);
+
+            card.title = judulKartu(svc, data);
         }
 
-        saveHistory();
         renderSummary(data.summary || {});
+        renderState(data.incidents || [], data.summary || {}, data);
 
         if (els.cycleNote) {
             els.cycleNote.textContent = data.checked_at_human || '--:--:--';
@@ -163,8 +246,73 @@
             els.cycleDuration.textContent = 'Siklus ' + (data.duration_ms || 0) + ' ms untuk ' +
                 services.length + ' layanan';
         }
+        if (els.windowNote) {
+            els.windowNote.textContent = data.window_minutes
+                ? 'Riwayat ' + durasi(data.window_minutes * 60) + ' terakhir'
+                : 'Riwayat belum tersimpan';
+        }
+
+        if (data.history_note) {
+            showBanner(data.history_note);
+        } else {
+            hideBanner();
+        }
 
         updateAlarm();
+    }
+
+    function judulKartu(svc, data) {
+        var baris = [svc.name + ' — ' + svc.label];
+
+        if (svc.detail) {
+            baris.push(svc.detail);
+        }
+        if (typeof svc.connect_ms === 'number') {
+            baris.push('Waktu connect: ' + Math.round(svc.connect_ms) + ' ms');
+        }
+        // Nilai lazim layanan ini, untuk menilai apakah angka sekarang wajar.
+        // Tidak dipajang di kartu: latency ke luar rumah sakit berayun cukup
+        // lebar sehingga penanda naik-turun akan menyala hampir sepanjang waktu
+        // dan berhenti berarti apa-apa. Trace di bawah angka sudah menunjukkan
+        // arah pergerakannya dengan lebih jujur.
+        if (typeof svc.baseline_ms === 'number') {
+            baris.push('Biasanya sekitar ' + svc.baseline_ms + ' ms');
+        }
+        if (svc.availability !== null && svc.history_samples > 0) {
+            baris.push('Ketersediaan ' + persen(svc.availability) +
+                ' dari ' + svc.history_samples + ' pengecekan');
+        }
+        if (svc.outages > 0) {
+            baris.push(svc.outages + ' gangguan dalam ' + durasi((data.window_minutes || 0) * 60) + ' terakhir');
+        }
+
+        return baris.join('\n');
+    }
+
+    function renderAvail(node, svc) {
+        if (!node) {
+            return;
+        }
+
+        // Di bawah beberapa sampel, persentase belum berarti apa-apa. Angka 100%
+        // juga disembunyikan: strip yang seluruhnya hijau sudah mengatakannya,
+        // dan menampilkannya di setiap kartu justru membuat angka yang TIDAK
+        // seratus persen tenggelam di antara belasan angka yang sama.
+        if (svc.availability === null || (svc.history_samples || 0) < 3 || svc.availability >= 100) {
+            node.textContent = '';
+            node.removeAttribute('data-tone');
+            return;
+        }
+
+        node.textContent = persen(svc.availability);
+
+        if (svc.availability < 95) {
+            node.setAttribute('data-tone', 'bad');
+        } else if (svc.availability < 99.5) {
+            node.setAttribute('data-tone', 'warn');
+        } else {
+            node.removeAttribute('data-tone');
+        }
     }
 
     function renderSummary(summary) {
@@ -180,6 +328,95 @@
         }
     }
 
+    /* ---------- Baris keadaan ---------- */
+
+    function renderState(incidents, summary, data) {
+        if (!els.state || !els.stateText || !els.stateList) {
+            return;
+        }
+
+        els.stateList.textContent = '';
+
+        if (incidents.length === 0) {
+            els.state.dataset.state = 'ok';
+            els.stateText.textContent = 'Semua layanan normal · ' +
+                (summary.good || 0) + ' dari ' + (summary.total || 0) + ' menjawab cepat';
+            return;
+        }
+
+        els.state.dataset.state = 'problem';
+        els.stateText.textContent = incidents.length + ' layanan perlu diperiksa';
+
+        var sekarang = data.server_time || Math.floor(Date.now() / 1000);
+        var frag = document.createDocumentFragment();
+
+        // Daftar dibatasi supaya panel ini tidak mendorong seluruh kartu keluar
+        // layar saat banyak yang bermasalah -- justru saat itulah kartu paling
+        // perlu terlihat. Sisanya tetap tampak sebagai kartu merah di bawah.
+        var BATAS = 6;
+        var tampil = Math.min(incidents.length, BATAS);
+
+        for (var i = 0; i < tampil; i++) {
+            var ins = incidents[i];
+            var li = document.createElement('li');
+            li.className = 'state__item';
+            li.setAttribute('data-status', ins.status);
+
+            var nama = document.createElement('span');
+            nama.className = 'state__name';
+            nama.textContent = ins.name;
+
+            var apa = document.createElement('span');
+            apa.className = 'state__what';
+            apa.textContent = ins.status === 'slow' && typeof ins.latency_ms === 'number'
+                ? ins.label + ' ' + Math.round(ins.latency_ms) + ' ms'
+                : ins.label;
+
+            var meta = document.createElement('span');
+            meta.className = 'state__meta';
+            meta.textContent = metaInsiden(ins, sekarang, data);
+
+            li.appendChild(nama);
+            li.appendChild(apa);
+            if (meta.textContent) {
+                li.appendChild(meta);
+            }
+            frag.appendChild(li);
+        }
+
+        if (incidents.length > tampil) {
+            var sisa = document.createElement('li');
+            sisa.className = 'state__item state__item--more';
+            sisa.textContent = '+ ' + (incidents.length - tampil) + ' layanan lain bermasalah';
+            frag.appendChild(sisa);
+        }
+
+        els.stateList.appendChild(frag);
+    }
+
+    function metaInsiden(ins, sekarang, data) {
+        var bagian = [];
+
+        if (ins.since) {
+            bagian.push('sejak ' + jam(ins.since) + ' (' + durasi(sekarang - ins.since) + ')');
+        }
+
+        // Layanan yang berulang kali putus-nyambung butuh perlakuan berbeda dari
+        // yang mati sekali dan tetap mati, jadi hitungannya ditampilkan.
+        if (ins.outages > 1) {
+            bagian.push(ins.outages + '\u00d7 terganggu dalam ' +
+                durasi((data.window_minutes || 0) * 60) + ' terakhir');
+        }
+
+        if (ins.detail) {
+            bagian.push(ins.detail);
+        }
+
+        return bagian.join(' · ');
+    }
+
+    /* ---------- Utilitas DOM ---------- */
+
     function setField(card, field, value) {
         var node = card.querySelector('[data-field="' + field + '"]');
         if (node) {
@@ -190,8 +427,6 @@
     function cssEscape(value) {
         return String(value).replace(/["\\]/g, '\\$&');
     }
-
-    /* ---------- Banner ---------- */
 
     function showBanner(message) {
         if (!els.banner) {
@@ -258,14 +493,14 @@
     }
 
     function updateAlarm() {
-        var shouldSound = alarmOn && anyDown;
+        var berbunyi = alarmOn && anyDown;
 
-        if (shouldSound && !beepTimer) {
+        if (berbunyi && !beepTimer) {
             if (ensureAudio()) {
                 beep();
                 beepTimer = window.setInterval(beep, 1400);
             }
-        } else if (!shouldSound && beepTimer) {
+        } else if (!berbunyi && beepTimer) {
             window.clearInterval(beepTimer);
             beepTimer = null;
         }
@@ -363,7 +598,6 @@
                 });
             })
             .then(function (data) {
-                hideBanner();
                 render(data);
             })
             .catch(function (err) {
